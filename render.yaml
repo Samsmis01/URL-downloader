@@ -3,13 +3,12 @@ services:
     name: fb-insta-downloader
     env: node
     buildCommand: |
-      apt-get update
-      apt-get install -y python3-pip ffmpeg
-      pip3 install yt-dlp
+      chmod +x ./render-setup.sh
+      ./render-setup.sh
       npm install
     startCommand: npm start
     envVars:
-      - key: PORT
-        value: 3000
+      - key: RENDER
+        value: true
       - key: YTDLP_PATH
         value: /usr/local/bin/yt-dlp
