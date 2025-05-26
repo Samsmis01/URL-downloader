@@ -63,3 +63,4 @@
     "installCommand": "npm run render-setup && npm install",
     "startCommand": "npm start"
   }
+}
