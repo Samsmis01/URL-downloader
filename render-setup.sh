@@ -1,10 +1,9 @@
 #!/bin/bash
 set -e
 
-# Vérifie si on est sur Render
-if [ "$RENDER" = "true" ]; then
-  echo "🔧 Installation des dépendances système sur Render..."
-  sudo apt-get update -y
-  sudo apt-get install -y python3-pip ffmpeg
-  pip3 install yt-dlp
+
+if ! command -v yt-dlp &> /dev/null; then
+  echo "Installation alternative de yt-dlp..."
+  sudo curl -L https://github.com/yt-dlp/yt-dlp/releases/latest/download/yt-dlp -o /usr/local/bin/yt-dlp
+  sudo chmod a+rx /usr/local/bin/yt-dlp
 fi
