@@ -1,9 +1,15 @@
 #!/bin/bash
 set -e
 
-echo "🛠️ Installation de yt-dlp..."
-sudo curl -L https://github.com/yt-dlp/yt-dlp/releases/latest/download/yt-dlp -o /usr/local/bin/yt-dlp
-sudo chmod a+rx /usr/local/bin/yt-dlp
+echo "🔧 Installation des dépendances système..."
+sudo apt-get update
+sudo apt-get install -y ffmpeg python3
 
-echo "✅ Vérification :"
-yt-dlp --version
+echo "📦 Installation de yt-dlp..."
+sudo python3 -m pip install --upgrade yt-dlp
+
+echo "✅ Vérification des versions:"
+echo "Node: $(node -v)"
+echo "npm: $(npm -v)"
+echo "Python: $(python3 --version)"
+echo "yt-dlp: $(yt-dlp --version)"
