@@ -1,7 +1,8 @@
 const express = require('express');
 const path = require('path');
 const fs = require('fs');
-const ytdl = require('yt-dlp-exec');
+const { YTDLP } = require('@distube/yt-dlp');
+const ytdl = new YTDLP();
 const sanitize = require('sanitize-filename');
 const app = express();
 const rateLimit = require('express-rate-limit');
