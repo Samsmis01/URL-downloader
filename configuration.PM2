@@ -1,0 +1,4 @@
+npm install -g pm2
+pm2 start server.js --name "fb-downloader"
+pm2 save
+pm2 startu
