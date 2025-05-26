@@ -17,4 +17,4 @@ echo "npm  : $(npm -v || echo 'npm non installé')"
 echo "Python : $(python3 --version)"
 echo "yt-dlp : $(yt-dlp --version)"
 
-echo "🎉 Installation terminée avec succès.
+echo "🎉 Installation terminée avec succès."
