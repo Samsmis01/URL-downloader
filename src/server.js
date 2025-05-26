@@ -1,7 +1,7 @@
 const express = require('express');
 const path = require('path');
 const fs = require('fs');
-const youtubedl = require('youtube-dl-exec');
+const youtubedl = require('yt-dlp-exec');  // <- remplacement ici
 const sanitize = require('sanitize-filename');
 const rateLimit = require('express-rate-limit');
 const visitorCounter = require('./visitorCounter');
@@ -21,7 +21,7 @@ app.use(visitorCounter);
 // Limiter les requêtes pour éviter les abus
 const limiter = rateLimit({
   windowMs: 15 * 60 * 1000, // 15 minutes
-  max: 100 // limite chaque IP à 100 requêtes par fenêtre
+  max: 100
 });
 app.use('/download', limiter);
 
@@ -50,25 +50,21 @@ setInterval(() => {
       });
     });
   });
-}, 60000); // Vérifier toutes les minutes
+}, 60000);
 
 // Route de téléchargement
 app.post('/download', async (req, res) => {
   try {
     const { url } = req.body;
 
-    // Validation de l'URL
     if (!url || !url.match(/(facebook\.com|instagram\.com)/i)) {
       return res.status(400).json({ error: 'URL Facebook ou Instagram invalide' });
     }
 
-    // Générer un nom de fichier sécurisé
     const filename = sanitize(`video_${Date.now()}.mp4`);
     const filepath = path.join(DOWNLOAD_FOLDER, filename);
 
-    // Options pour yt-dlp
     const options = {
-      exec: '/usr/local/bin/yt-dlp',
       output: filepath,
       format: 'bestvideo[ext=mp4]+bestaudio[ext=m4a]/best[ext=mp4]/best',
       noCheckCertificates: true,
@@ -80,7 +76,6 @@ app.post('/download', async (req, res) => {
       ]
     };
 
-    // Téléchargement réel
     await youtubedl(url, options);
 
     res.json({
@@ -100,4 +95,4 @@ app.post('/download', async (req, res) => {
 
 app.listen(PORT, () => {
   console.log(`Serveur démarré sur le port ${PORT}`);
-});
+})
