@@ -1,68 +1,33 @@
 {
   "name": "fb-insta-downloader",
   "version": "1.0.0",
-  "description": "Téléchargeur de vidéos Facebook/Instagram avec statistiques en temps réel",
+  "description": "Téléchargeur de vidéos Facebook/Instagram",
   "main": "src/server.js",
   "scripts": {
-    "preinstall": "if [ -z \"$RENDER\" ]; then echo '🔧 Installation des dépendances système locales...' && apt-get update && apt-get install -y python3-pip ffmpeg; else echo '⏩ Skipping system dependencies (Render)'; fi",
-    "install": "if [ -z \"$RENDER\" ]; then pip3 install yt-dlp; fi",
-    "postinstall": "echo '✅ Installation terminée !'",
-    "render-setup": "chmod +x ./render-setup.sh && ./render-setup.sh",
-    "start": "NODE_ENV=production node src/server.js",
-    "dev": "nodemon src/server.js --watch src",
-    "build": "echo '🏗️  Build non nécessaire pour Node.js'",
-    "clean": "rimraf public/downloads/*",
-    "test": "echo '⚠️  Ajoutez des tests ici' && exit 0",
-    "lint": "eslint src/",
-    "prepare": "husky install"
+    "start": "node src/server.js",
+    "dev": "nodemon src/server.js",
+    "clean": "rm -rf public/downloads/*",
+    "setup": "./render-setup.sh"
   },
   "dependencies": {
     "express": "^4.18.2",
-    "yt-dlp": "github:yt-dlp/yt-dlp",
-    "ytdl-core": "^4.11.5",
+    "yt-dlp-exec": "^2.0.0",
     "sanitize-filename": "^1.6.3",
-    "express-rate-limit": "^6.7.0",
-    "express-session": "^1.17.3",
-    "chart.js": "^4.3.0",
-    "fs-extra": "^11.2.0",
-    "morgan": "^1.10.0",
-    "helmet": "^7.1.0",
-    "cors": "^2.8.5"
+    "express-rate-limit": "^6.8.1",
+    "fs-extra": "^11.2.0"
   },
   "devDependencies": {
     "nodemon": "^3.1.0",
-    "rimraf": "^5.0.5",
-    "eslint": "^8.56.0",
-    "eslint-config-airbnb-base": "^16.1.0",
-    "eslint-plugin-import": "^2.29.1",
-    "husky": "^9.0.11"
+    "eslint": "^9.0.0",
+    "eslint-config-airbnb-base": "^17.0.0",
+    "eslint-plugin-import": "^2.29.1"
   },
   "engines": {
     "node": ">=18.0.0",
-    "npm": ">=9.0.0",
-    "python": ">=3.8.0"
+    "npm": ">=10.0.0"
   },
-  "keywords": [
-    "video",
-    "downloader",
-    "facebook",
-    "instagram",
-    "yt-dlp",
-    "express",
-    "statistics"
-  ],
-  "author": "Samsmis01",
-  "license": "MIT",
-  "repository": {
-    "type": "git",
-    "url": "https://github.com/Samsmis01/URL-downloader"
-  },
-  "bugs": {
-    "url": "https://github.com/Samsmis01/URL-downloader/issues"
-  },
-  "homepage": "https://github.com/Samsmis01/URL-downloader#readme",
   "render": {
-    "installCommand": "npm run render-setup && npm install",
+    "installCommand": "./render-setup.sh && npm install",
     "startCommand": "npm start"
   }
 }
