@@ -25,7 +25,8 @@
   "engines": {
     "node": ">=16.0.0",
     "npm": ">=8.0.0"
-  },
+  },{
+  "main": "src/server.js",
   "scripts": {
   "start": "node server.js",
   "build": "apt-get update && apt-get install -y python3-pip ffmpeg && pip3 install yt-dlp"
