@@ -35,4 +35,4 @@ module.exports = function(req, res, next) {
     req.session.todayVisitors = stats.todayVisitors;
     req.session.activeUsers = Math.floor(Math.random() * 50) + 20; // Simuler des utilisateurs actifs
     
-    next(
+    next()
