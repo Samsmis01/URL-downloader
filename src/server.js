@@ -9,34 +9,35 @@ const app = express();
 
 // Configuration
 const PORT = process.env.PORT || 3000;
-const DOWNLOAD_FOLDER = path.join(__dirname, 'public', 'downloads');
+const PUBLIC_FOLDER = path.join(__dirname, 'public');
+const DOWNLOAD_FOLDER = path.join(PUBLIC_FOLDER, 'downloads');
 const FILE_LIFETIME = 58000; // 58 secondes
 
-// Middleware
-app.use(express.static(path.join(__dirname, 'public')));
+// Middlewares
+app.use(express.static(PUBLIC_FOLDER));
 app.use(express.json());
 
-// Limiter les requêtes
+// Limiteur anti-abus
 const limiter = rateLimit({
   windowMs: 15 * 60 * 1000,
   max: 100
 });
 app.use('/download', limiter);
 
-// Créer le dossier de téléchargement s'il n'existe pas
+// Créer dossier de téléchargement si absent
 if (!fs.existsSync(DOWNLOAD_FOLDER)) {
   fs.mkdirSync(DOWNLOAD_FOLDER, { recursive: true });
 }
 
-// Supprimer les fichiers trop vieux
+// Nettoyage des fichiers anciens
 setInterval(() => {
   fs.readdir(DOWNLOAD_FOLDER, (err, files) => {
-    if (err) return console.error('Erreur de lecture du dossier:', err);
+    if (err) return console.error('Erreur lecture dossier:', err);
     const now = Date.now();
     files.forEach(file => {
       const filePath = path.join(DOWNLOAD_FOLDER, file);
       fs.stat(filePath, (err, stat) => {
-        if (err) return console.error('Erreur de stat:', err);
+        if (err) return console.error('Erreur stat fichier:', err);
         if (now - stat.birthtimeMs > FILE_LIFETIME) {
           fs.unlink(filePath, err => {
             if (err) console.error('Erreur suppression:', err);
@@ -47,6 +48,11 @@ setInterval(() => {
     });
   });
 }, 60000);
+
+// Route GET / pour afficher index.html (protection anti Cannot GET /)
+app.get('/', (req, res) => {
+  res.sendFile(path.join(PUBLIC_FOLDER, 'index.html'));
+});
 
 // Route de téléchargement
 app.post('/download', async (req, res) => {
@@ -80,12 +86,12 @@ app.post('/download', async (req, res) => {
     });
 
   } catch (error) {
-    console.error('Erreur:', error);
+    console.error('Erreur téléchargement:', error);
     res.status(500).json({ error: 'Téléchargement échoué', details: error.message });
   }
 });
 
-// Lancer le serveur
+// Lancer serveur
 app.listen(PORT, () => {
   console.log(`Serveur démarré sur http://localhost:${PORT}`);
 });
