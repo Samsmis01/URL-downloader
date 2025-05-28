@@ -1,7 +1,7 @@
 const express = require('express');
 const path = require('path');
 const fs = require('fs');
-const youtubedl = require('yt-dlp-exec').create('/app/bin/yt-dlp');
+const youtubedl = require('yt-dlp-exec').create(process.env.YT_DLP_PATH || 'yt-dlp');
 const sanitize = require('sanitize-filename');
 const rateLimit = require('express-rate-limit');
 const cors = require('cors');
@@ -13,13 +13,13 @@ const PORT = process.env.PORT || 3000;
 
 const PUBLIC_FOLDER = path.join(__dirname, '../public');
 const DOWNLOAD_FOLDER = path.join(PUBLIC_FOLDER, 'downloads');
-const INDEX_HTML = path.join(__dirname, '../public/downloads/index.html'); // Chemin absolu corrigé
+const INDEX_HTML = path.join(__dirname, '../public/downloads/index.html');
 const FILE_LIFETIME = 58000; // 58 secondes
 
 // Middlewares
 app.use(cors());
-app.use('/downloads', express.static(DOWNLOAD_FOLDER)); // Service statique pour les téléchargements
-app.use(express.static(PUBLIC_FOLDER)); // Service statique pour les autres fichiers
+app.use('/downloads', express.static(DOWNLOAD_FOLDER));
+app.use(express.static(PUBLIC_FOLDER));
 app.use(express.json());
 
 // Limiteur anti-abus
@@ -55,7 +55,7 @@ function cleanOldFiles() {
   });
 }
 setInterval(cleanOldFiles, 60000);
-cleanOldFiles(); // Nettoyage au démarrage
+cleanOldFiles();
 
 // Stats en mémoire
 let stats = {
@@ -73,10 +73,11 @@ function updateStats(increment = 1) {
   stats.todayDownloads += increment;
 }
 
-// API Download
+// API Download - Version améliorée
 app.post('/api/download', async (req, res) => {
   try {
     const { url } = req.body;
+    console.log('Tentative de téléchargement pour URL:', url);
 
     if (!url) {
       return res.status(400).json({ 
@@ -85,13 +86,14 @@ app.post('/api/download', async (req, res) => {
       });
     }
 
-    const isFacebook = /(facebook\.com|fb\.watch|fb\.com)/i.test(url);
-    const isInstagram = /(instagram\.com|instagr\.am)/i.test(url);
+    // Validation améliorée des URLs
+    const isFacebook = /(facebook\.com\/(watch|reel)|fb\.watch|fb\.com\/watch\?v=)/i.test(url);
+    const isInstagram = /(instagram\.com\/(p|reel)|instagr\.am\/(p|reel))/i.test(url);
 
     if (!isFacebook && !isInstagram) {
       return res.status(400).json({ 
         success: false,
-        message: 'Seules les URLs Facebook et Instagram sont supportées'
+        message: 'Format URL non supporté. Exemples valides:\nFacebook: https://www.facebook.com/watch/?v=...\nInstagram: https://www.instagram.com/p/...'
       });
     }
 
@@ -100,6 +102,7 @@ app.post('/api/download', async (req, res) => {
     const filename = sanitize(`${platform}-${timestamp}.mp4`);
     const filepath = path.join(DOWNLOAD_FOLDER, filename);
 
+    // Options améliorées
     const options = {
       output: filepath,
       format: 'bestvideo[ext=mp4]+bestaudio[ext=m4a]/best[ext=mp4]/best',
@@ -107,20 +110,29 @@ app.post('/api/download', async (req, res) => {
       noWarnings: true,
       preferFreeFormats: true,
       addHeader: [
-        'referer:youtube.com',
-        'user-agent:googlebot'
+        'referer:https://www.facebook.com/',
+        'user-agent:Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36'
       ],
-      quiet: true
+      quiet: true,
+      extractorArgs: {
+        instagram: {
+          force_generic_extractor: true
+        },
+        facebook: {
+          force_generic_extractor: true
+        }
+      }
     };
 
-    console.log(`Début du téléchargement: ${url}`);
+    console.log('Options de téléchargement:', options);
     await youtubedl(url, options);
 
     if (!fs.existsSync(filepath)) {
-      throw new Error('Le fichier n\'a pas été créé');
+      throw new Error('Le fichier téléchargé est introuvable');
     }
 
     updateStats(1);
+    console.log('Téléchargement réussi:', filename);
 
     res.json({
       success: true,
@@ -130,11 +142,14 @@ app.post('/api/download', async (req, res) => {
     });
 
   } catch (error) {
-    console.error('Erreur téléchargement:', error);
+    console.error('Échec du téléchargement:', {
+      error: error.message,
+      stack: error.stack
+    });
     res.status(500).json({ 
       success: false,
-      message: 'Échec du téléchargement',
-      details: error.message
+      message: 'Échec du téléchargement. Raison: ' + error.message,
+      details: process.env.NODE_ENV === 'development' ? error.stack : undefined
     });
   }
 });
@@ -154,19 +169,30 @@ app.get('/api/stats', (req, res) => {
 
 // Route GET / pour envoyer index.html
 app.get('*', (req, res) => {
-  res.sendFile(INDEX_HTML); // Utilisation du chemin corrigé
+  res.sendFile(INDEX_HTML);
 });
 
-// Gestion des erreurs
+// Gestion des erreurs améliorée
 app.use((err, req, res, next) => {
-  console.error('Erreur serveur:', err);
+  console.error('Erreur serveur:', {
+    message: err.message,
+    stack: err.stack,
+    url: req.originalUrl
+  });
   res.status(500).json({ 
     success: false,
-    message: 'Erreur interne du serveur'
+    message: 'Erreur interne du serveur',
+    ...(process.env.NODE_ENV === 'development' && { debug: err.stack })
   });
 });
 
 // Lancer le serveur
 app.listen(PORT, () => {
   console.log(`Serveur démarré sur http://localhost:${PORT}`);
-})
+  console.log('Configuration:', {
+    PUBLIC_FOLDER,
+    DOWNLOAD_FOLDER,
+    INDEX_HTML,
+    YT_DLP_PATH: process.env.YT_DLP_PATH || 'yt-dlp (par défaut)'
+  });
+});
