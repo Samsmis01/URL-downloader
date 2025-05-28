@@ -1,4 +1,4 @@
-const express = require('express');
+ const express = require('express');
 const path = require('path');
 const fs = require('fs');
 const youtubedl = require('yt-dlp-exec').create('/app/bin/yt-dlp');
@@ -13,7 +13,7 @@ const PORT = process.env.PORT || 3000;
 
 const PUBLIC_FOLDER = path.join(__dirname, '../public');
 const DOWNLOAD_FOLDER = path.join(PUBLIC_FOLDER, 'downloads');
-const INDEX_HTML = path.join(DOWNLOAD_FOLDER, 'index.html');
+const INDEX_HTML = path.join(PUBLIC_FOLDER, 'index.html'); // Changé ici
 const FILE_LIFETIME = 58000; // 58 secondes
 
 // Middlewares
@@ -153,7 +153,7 @@ app.get('/api/stats', (req, res) => {
 
 // Route GET / pour envoyer index.html
 app.get('*', (req, res) => {
-  res.sendFile(path.join(DOWNLOAD_FOLDER, 'index.html'));
+  res.sendFile(INDEX_HTML); // Changé ici pour utiliser la constante corrigée
 });
 
 // Gestion des erreurs
