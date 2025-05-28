@@ -1,59 +1,99 @@
 const fs = require('fs');
 const path = require('path');
+const { v4: uuidv4 } = require('uuid');
 
 module.exports = function(req, res, next) {
-    const statsFile = path.join(__dirname, 'visitorStats.json');
+    const statsDir = path.join(__dirname, 'stats_data');
+    const statsFile = path.join(statsDir, 'visitorStats.json');
+    const visitorLogFile = path.join(statsDir, 'visitorLogs.ndjson');
+    const sessionId = req.sessionID || uuidv4();
+    const visitTime = new Date();
 
-    // Lire ou initialiser les stats
-    let stats = {
+    // Créer le dossier stats_data s'il n'existe pas
+    if (!fs.existsSync(statsDir)) {
+        fs.mkdirSync(statsDir, { recursive: true });
+    }
+
+    // Structure de base des statistiques
+    const defaultStats = {
         totalVisitors: 0,
         todayVisitors: 0,
-        date: new Date().toDateString(),
-        lastReset: Date.now()
+        date: visitTime.toDateString(),
+        lastReset: visitTime.getTime(),
+        byCountry: {},
+        byDevice: {},
+        byBrowser: {}
     };
 
-    if (fs.existsSync(statsFile)) {
-        try {
-            stats = JSON.parse(fs.readFileSync(statsFile, 'utf-8'));
-
-            // Réinitialiser le compteur quotidien si c'est un nouveau jour
-            if (stats.date !== new Date().toDateString()) {
-                stats.date = new Date().toDateString();
-                stats.todayVisitors = 0;
-                stats.lastReset = Date.now();
-            }
-        } catch (err) {
-            console.error('Erreur lecture visitorStats.json:', err);
-            // En cas d'erreur, réinitialiser stats à l'objet par défaut
-            stats = {
-                totalVisitors: 0,
-                todayVisitors: 0,
-                date: new Date().toDateString(),
-                lastReset: Date.now()
-            };
-        }
+    // Initialiser/Lire les stats
+    let stats;
+    try {
+        stats = fs.existsSync(statsFile) ? 
+            JSON.parse(fs.readFileSync(statsFile, 'utf-8')) : 
+            { ...defaultStats };
+    } catch (err) {
+        console.error('Erreur lecture stats:', err);
+        stats = { ...defaultStats };
     }
 
-    // Mettre à jour les stats
+    // Réinitialisation quotidienne
+    if (stats.date !== visitTime.toDateString()) {
+        stats.date = visitTime.toDateString();
+        stats.todayVisitors = 0;
+        stats.lastReset = visitTime.getTime();
+    }
+
+    // Détection du device et browser (basique)
+    const userAgent = req.headers['user-agent'] || '';
+    const isMobile = /Mobile|Android|iPhone/i.test(userAgent);
+    const browser = userAgent.match(/(Chrome|Firefox|Safari|Edge|Opera)[\/\s][\d.]+/i)?.[1] || 'Unknown';
+
+    // Mise à jour des stats
     stats.totalVisitors++;
     stats.todayVisitors++;
+    
+    // Stats par pays (utilisez un middleware geoip en production)
+    const country = req.headers['cf-ipcountry'] || 'Unknown';
+    stats.byCountry[country] = (stats.byCountry[country] || 0) + 1;
+    
+    // Stats par device
+    const deviceType = isMobile ? 'Mobile' : 'Desktop';
+    stats.byDevice[deviceType] = (stats.byDevice[deviceType] || 0) + 1;
+    
+    // Stats par navigateur
+    stats.byBrowser[browser] = (stats.byBrowser[browser] || 0) + 1;
 
-    // Sauvegarder
+    // Sauvegarde sécurisée
     try {
         fs.writeFileSync(statsFile, JSON.stringify(stats, null, 2));
+        
+        // Log détaillé au format NDJSON
+        const logEntry = {
+            timestamp: visitTime.toISOString(),
+            sessionId,
+            ip: req.ip,
+            country,
+            device: deviceType,
+            browser,
+            url: req.originalUrl,
+            userAgent
+        };
+        fs.appendFileSync(visitorLogFile, JSON.stringify(logEntry) + '\n');
     } catch (err) {
-        console.error('Erreur écriture visitorStats.json:', err);
+        console.error('Erreur sauvegarde stats:', err);
     }
 
-    // Ajouter aux données de session (si session activée)
-    if (req.session) {
-        req.session.totalVisitors = stats.totalVisitors;
-        req.session.todayVisitors = stats.todayVisitors;
-        req.session.activeUsers = Math.floor(Math.random() * 50) + 20; // Simuler des utilisateurs actifs
-    }
+    // Injection dans res.locals pour votre HTML
+    res.locals.visitorStats = {
+        total: stats.totalVisitors,
+        today: stats.todayVisitors,
+        active: Math.floor(stats.todayVisitors / 10) + 10 // Algorithme plus réaliste
+    };
 
-    // Log visiteur
-    console.log(`Visiteur: IP=${req.ip}, URL=${req.originalUrl}, Temps=${new Date().toISOString()}`);
+    // Pour les API
+    if (req.path.startsWith('/api')) {
+        req.visitorStats = res.locals.visitorStats;
+    }
 
     next();
 };
