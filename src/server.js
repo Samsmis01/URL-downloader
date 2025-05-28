@@ -1,20 +1,20 @@
 const express = require('express');
 const path = require('path');
 const fs = require('fs');
-const youtubedl = require('yt-dlp-exec').create(process.env.YT_DLP_PATH || 'yt-dlp');
+const ytdlp = require('yt-dlp-exec').create('/usr/local/bin/yt-dlp');
 const sanitize = require('sanitize-filename');
 const rateLimit = require('express-rate-limit');
 const cors = require('cors');
+const { v4: uuidv4 } = require('uuid');
 
 const app = express();
 
-// Configurations
+// Configuration
 const PORT = process.env.PORT || 3000;
-
 const PUBLIC_FOLDER = path.join(__dirname, '../public');
 const DOWNLOAD_FOLDER = path.join(PUBLIC_FOLDER, 'downloads');
-const INDEX_HTML = path.join(__dirname, '../public/downloads/index.html');
-const FILE_LIFETIME = 58000; // 58 secondes
+const INDEX_HTML = path.join(DOWNLOAD_FOLDER, 'index.html');
+const FILE_LIFETIME = 3600000; // 1 heure
 
 // Middlewares
 app.use(cors());
@@ -22,177 +22,175 @@ app.use('/downloads', express.static(DOWNLOAD_FOLDER));
 app.use(express.static(PUBLIC_FOLDER));
 app.use(express.json());
 
-// Limiteur anti-abus
+// Rate limiting
 const limiter = rateLimit({
   windowMs: 15 * 60 * 1000,
-  max: 100,
+  max: 50,
   message: { error: 'Trop de requêtes, veuillez réessayer plus tard' }
 });
 app.use('/api/download', limiter);
 
-// Créer dossier downloads s'il n'existe pas
+// Ensure download directory exists
 if (!fs.existsSync(DOWNLOAD_FOLDER)) {
   fs.mkdirSync(DOWNLOAD_FOLDER, { recursive: true });
 }
 
-// Nettoyer les fichiers anciens
+// Clean old files
 function cleanOldFiles() {
   fs.readdir(DOWNLOAD_FOLDER, (err, files) => {
-    if (err) return console.error('Erreur lecture dossier:', err);
+    if (err) return console.error('Error cleaning files:', err);
+    
     const now = Date.now();
     files.forEach(file => {
       const filePath = path.join(DOWNLOAD_FOLDER, file);
       fs.stat(filePath, (err, stat) => {
-        if (err) return console.error('Erreur stat fichier:', err);
-        if (now - stat.birthtimeMs > FILE_LIFETIME) {
+        if (!err && (now - stat.birthtimeMs > FILE_LIFETIME)) {
           fs.unlink(filePath, err => {
-            if (err) console.error('Erreur suppression:', err);
-            else console.log('Fichier supprimé:', file);
+            if (!err) console.log('Cleaned old file:', file);
           });
         }
       });
     });
   });
 }
-setInterval(cleanOldFiles, 60000);
+setInterval(cleanOldFiles, 3600000); // Run hourly
 cleanOldFiles();
 
-// Stats en mémoire
-let stats = {
+// Stats tracking
+const stats = {
   totalDownloads: 0,
   todayDownloads: 0,
   lastReset: new Date().toDateString()
 };
 
-function updateStats(increment = 1) {
-  if (new Date().toDateString() !== stats.lastReset) {
+function updateStats() {
+  const today = new Date().toDateString();
+  if (stats.lastReset !== today) {
     stats.todayDownloads = 0;
-    stats.lastReset = new Date().toDateString();
+    stats.lastReset = today;
   }
-  stats.totalDownloads += increment;
-  stats.todayDownloads += increment;
+  stats.totalDownloads++;
+  stats.todayDownloads++;
 }
 
-// API Download - Version améliorée
+// Enhanced download endpoint
 app.post('/api/download', async (req, res) => {
-  try {
-    const { url } = req.body;
-    console.log('Tentative de téléchargement pour URL:', url);
+  const { url } = req.body;
+  const requestId = uuidv4();
+  const startTime = Date.now();
 
+  try {
+    // Validate URL
     if (!url) {
       return res.status(400).json({ 
         success: false,
-        message: 'URL requise'
+        message: 'URL is required'
       });
     }
 
-    // Validation améliorée des URLs
     const isFacebook = /(facebook\.com\/(watch|reel)|fb\.watch|fb\.com\/watch\?v=)/i.test(url);
-    const isInstagram = /(instagram\.com\/(p|reel)|instagr\.am\/(p|reel))/i.test(url);
+    const isInstagram = /(instagram\.com\/(p|reel|tv)|instagr\.am\/(p|reel|tv))/i.test(url);
 
     if (!isFacebook && !isInstagram) {
       return res.status(400).json({ 
         success: false,
-        message: 'Format URL non supporté. Exemples valides:\nFacebook: https://www.facebook.com/watch/?v=...\nInstagram: https://www.instagram.com/p/...'
+        message: 'Only Facebook and Instagram URLs are supported'
       });
     }
 
-    const timestamp = Date.now();
-    const platform = isFacebook ? 'facebook' : 'instagram';
-    const filename = sanitize(`${platform}-${timestamp}.mp4`);
+    // Prepare download
+    const filename = sanitize(`${isFacebook ? 'fb' : 'ig'}_${Date.now()}.mp4`);
     const filepath = path.join(DOWNLOAD_FOLDER, filename);
+    const tempPath = `${filepath}.download`;
 
-    // Options améliorées
+    // Download options
     const options = {
-      output: filepath,
+      output: tempPath,
       format: 'bestvideo[ext=mp4]+bestaudio[ext=m4a]/best[ext=mp4]/best',
       noCheckCertificates: true,
       noWarnings: true,
       preferFreeFormats: true,
+      retries: 3,
+      socketTimeout: 30000,
       addHeader: [
         'referer:https://www.facebook.com/',
-        'user-agent:Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36'
+        'user-agent:Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
       ],
-      quiet: true,
-      extractorArgs: {
-        instagram: {
-          force_generic_extractor: true
-        },
-        facebook: {
-          force_generic_extractor: true
-        }
-      }
+      quiet: true
     };
 
-    console.log('Options de téléchargement:', options);
-    await youtubedl(url, options);
+    console.log(`[${requestId}] Starting download: ${url}`);
+    await ytdlp(url, options);
 
-    if (!fs.existsSync(filepath)) {
-      throw new Error('Le fichier téléchargé est introuvable');
+    // Verify download
+    if (!fs.existsSync(tempPath)) {
+      throw new Error('Downloaded file not found');
     }
 
-    updateStats(1);
-    console.log('Téléchargement réussi:', filename);
+    // Rename temp file
+    fs.renameSync(tempPath, filepath);
+
+    // Update stats
+    updateStats();
+
+    console.log(`[${requestId}] Download completed in ${(Date.now() - startTime)/1000}s`);
 
     res.json({
       success: true,
       downloadUrl: `/downloads/${filename}`,
       filename,
-      message: 'Téléchargement réussi'
+      message: 'Download successful'
     });
 
   } catch (error) {
-    console.error('Échec du téléchargement:', {
-      error: error.message,
-      stack: error.stack
-    });
-    res.status(500).json({ 
+    console.error(`[${requestId}] Download failed:`, error.message);
+    
+    // Clean up temp file
+    if (fs.existsSync(tempPath)) {
+      fs.unlinkSync(tempPath);
+    }
+
+    res.status(500).json({
       success: false,
-      message: 'Échec du téléchargement. Raison: ' + error.message,
-      details: process.env.NODE_ENV === 'development' ? error.stack : undefined
+      message: 'Download failed',
+      error: process.env.NODE_ENV === 'development' ? error.message : undefined
     });
   }
 });
 
-// API Stats
+// Stats endpoint
 app.get('/api/stats', (req, res) => {
   res.json({
     success: true,
     stats: {
       totalDownloads: stats.totalDownloads,
       todayDownloads: stats.todayDownloads,
-      totalVisitors: stats.totalDownloads + Math.floor(Math.random() * 5000),
-      activeUsers: Math.floor(Math.random() * 50) + 20
+      totalVisitors: stats.totalDownloads * 3, // Simulated ratio
+      activeUsers: Math.floor(stats.todayDownloads / 2) + 5
     }
   });
 });
 
-// Route GET / pour envoyer index.html
+// Serve index.html
 app.get('*', (req, res) => {
   res.sendFile(INDEX_HTML);
 });
 
-// Gestion des erreurs améliorée
+// Error handling
 app.use((err, req, res, next) => {
-  console.error('Erreur serveur:', {
-    message: err.message,
-    stack: err.stack,
-    url: req.originalUrl
-  });
+  console.error('Server error:', err);
   res.status(500).json({ 
     success: false,
-    message: 'Erreur interne du serveur',
-    ...(process.env.NODE_ENV === 'development' && { debug: err.stack })
+    message: 'Internal server error' 
   });
 });
 
-// Lancer le serveur
+// Start server
 app.listen(PORT, () => {
-  console.log(`Serveur démarré sur http://localhost:${PORT}`);
+  console.log(`Server running on http://localhost:${PORT}`);
   console.log('Configuration:', {
-    PUBLIC_FOLDER,
-    DOWNLOAD_FOLDER,
-    INDEX_HTML,
-    YT_DLP_PATH: process.env.YT_DLP_PATH || 'yt-dlp (par défaut)'
+    downloadFolder: DOWNLOAD_FOLDER,
+    fileLifetime: `${FILE_LIFETIME/1000/60} minutes`,
+    rateLimiting: '50 requests/15 minutes'
   });
 });
