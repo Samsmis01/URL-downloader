@@ -1,4 +1,4 @@
- const express = require('express');
+const express = require('express');
 const path = require('path');
 const fs = require('fs');
 const youtubedl = require('yt-dlp-exec').create('/app/bin/yt-dlp');
@@ -13,12 +13,13 @@ const PORT = process.env.PORT || 3000;
 
 const PUBLIC_FOLDER = path.join(__dirname, '../public');
 const DOWNLOAD_FOLDER = path.join(PUBLIC_FOLDER, 'downloads');
-const INDEX_HTML = path.join(PUBLIC_FOLDER, 'index.html'); // Changé ici
+const INDEX_HTML = path.join(__dirname, '../public/downloads/index.html'); // Chemin absolu corrigé
 const FILE_LIFETIME = 58000; // 58 secondes
 
 // Middlewares
 app.use(cors());
-app.use(express.static(PUBLIC_FOLDER));
+app.use('/downloads', express.static(DOWNLOAD_FOLDER)); // Service statique pour les téléchargements
+app.use(express.static(PUBLIC_FOLDER)); // Service statique pour les autres fichiers
 app.use(express.json());
 
 // Limiteur anti-abus
@@ -153,7 +154,7 @@ app.get('/api/stats', (req, res) => {
 
 // Route GET / pour envoyer index.html
 app.get('*', (req, res) => {
-  res.sendFile(INDEX_HTML); // Changé ici pour utiliser la constante corrigée
+  res.sendFile(INDEX_HTML); // Utilisation du chemin corrigé
 });
 
 // Gestion des erreurs
@@ -168,4 +169,4 @@ app.use((err, req, res, next) => {
 // Lancer le serveur
 app.listen(PORT, () => {
   console.log(`Serveur démarré sur http://localhost:${PORT}`);
-});
+})
