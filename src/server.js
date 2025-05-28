@@ -151,7 +151,32 @@ app.get('/api/stats', (req, res) => {
     }
   });
 });
+// Endpoint de téléchargement
+app.post('/api/download', async (req, res) => {
+    // Votre logique existante
+    res.json({
+        success: true,
+        downloadUrl: '/downloads/fichier.mp4',
+        filename: 'ma-video.mp4'
+    });
+});
 
+// Endpoint des statistiques
+app.get('/api/stats', async (req, res) => {
+    res.json({
+        success: true,
+        stats: {
+            totalVisitors: 15432,
+            todayVisitors: 243,
+            totalDownloads: 8765,
+            activeUsers: 42
+        },
+        chartData: {
+            downloads: [1200, 1900, 1700, ...], // 12 mois
+            visitors: [1500, 2100, 1800, ...]   // 12 mois
+        }
+    });
+});
 // Route GET / pour envoyer le fichier index.html
 app.get('*', (req, res) => {
   res.sendFile(path.join(PUBLIC_FOLDER, 'index.html'));
