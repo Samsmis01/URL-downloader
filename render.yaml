@@ -2,19 +2,14 @@ services:
   - type: web
     name: fb-insta-downloader
     env: node
-    region: frankfurt  # Choisissez la région la plus proche de vos utilisateurs
-    plan: free        # Ou 'starter'/'standard' pour plus de ressources
+    region: frankfurt
+    plan: free
     buildCommand: |
       chmod +x ./render-setup.sh
       ./render-setup.sh
-      curl -sL https://deb.nodesource.com/setup_16.x | bash -
-      apt-get install -y ffmpeg
-      npm install --include=dev
-      npm install uuid yt-dlp-exec express path fs sanitize-filename express-rate-limit cors
+      npm install --production
     startCommand: npm start
     envVars:
-      - key: RENDER
-        value: true
       - key: YT_DLP_PATH
         value: /usr/local/bin/yt-dlp
       - key: NODE_ENV
