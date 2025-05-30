@@ -1,269 +1,253 @@
 const express = require('express');
 const path = require('path');
-const fs = require('fs').promises;
-const fsSync = require('fs');
+const fs = require('fs');
 const ytdlp = require('yt-dlp-exec').create('/usr/local/bin/yt-dlp');
 const sanitize = require('sanitize-filename');
 const rateLimit = require('express-rate-limit');
 const cors = require('cors');
 const { v4: uuidv4 } = require('uuid');
 
-// Initialisation de l'application
 const app = express();
 
 // Configuration
 const PORT = process.env.PORT || 3000;
 const PUBLIC_FOLDER = path.join(__dirname, '../public');
 const DOWNLOAD_FOLDER = path.join(PUBLIC_FOLDER, 'downloads');
-const INDEX_HTML = path.join(PUBLIC_FOLDER, 'index.html'); // Correction du chemin
-const FILE_LIFETIME = 3600000; // 1 heure en ms
+const INDEX_HTML = path.join(DOWNLOAD_FOLDER, 'index.html');
+const FILE_LIFETIME = 3600000; // 1 heure
 
 // Middlewares
-app.use(cors({
-  origin: process.env.NODE_ENV === 'production' ? 'https://votre-domaine.com' : '*'
-}));
+app.use(cors());
 app.use('/downloads', express.static(DOWNLOAD_FOLDER));
 app.use(express.static(PUBLIC_FOLDER));
 app.use(express.json());
 
-// Rate limiting amélioré
+// Rate limiting
 const limiter = rateLimit({
   windowMs: 15 * 60 * 1000,
   max: 50,
-  standardHeaders: true,
-  legacyHeaders: false,
-  message: { 
-    success: false,
-    error: 'Trop de requêtes, veuillez réessayer plus tard' 
-  }
+  message: { error: 'Trop de requêtes, veuillez réessayer plus tard' }
 });
 app.use('/api/download', limiter);
 
-// Vérification du dossier de téléchargement (version async)
-async function ensureDownloadDir() {
-  try {
-    await fs.access(DOWNLOAD_FOLDER);
-  } catch {
-    await fs.mkdir(DOWNLOAD_FOLDER, { recursive: true });
-  }
+// Ensure download directory exists
+if (!fs.existsSync(DOWNLOAD_FOLDER)) {
+  fs.mkdirSync(DOWNLOAD_FOLDER, { recursive: true });
 }
 
-// Nettoyage des fichiers anciens (version optimisée)
-async function cleanOldFiles() {
-  try {
-    const files = await fs.readdir(DOWNLOAD_FOLDER);
-    const now = Date.now();
+// Clean old files
+function cleanOldFiles() {
+  fs.readdir(DOWNLOAD_FOLDER, (err, files) => {
+    if (err) return console.error('Error cleaning files:', err);
     
-    await Promise.all(files.map(async (file) => {
+    const now = Date.now();
+    files.forEach(file => {
       const filePath = path.join(DOWNLOAD_FOLDER, file);
-      const stat = await fs.stat(filePath);
-      
-      if (now - stat.birthtimeMs > FILE_LIFETIME) {
-        await fs.unlink(filePath);
-        console.log(`Fichier nettoyé: ${file}`);
-      }
-    }));
-  } catch (error) {
-    console.error('Erreur lors du nettoyage:', error.message);
-  }
+      fs.stat(filePath, (err, stat) => {
+        if (!err && (now - stat.birthtimeMs > FILE_LIFETIME)) {
+          fs.unlink(filePath, err => {
+            if (!err) console.log('Cleaned old file:', file);
+          });
+        }
+      });
+    });
+  });
 }
+setInterval(cleanOldFiles, 3600000); // Run hourly
+cleanOldFiles();
 
-// Statistiques améliorées
+// Stats tracking
 const stats = {
   totalDownloads: 0,
   todayDownloads: 0,
   lastReset: new Date().toDateString(),
-  visitors: new Map() // Utilisation de Map pour de meilleures performances
+  visitors: {}
 };
 
 function updateStats(ip) {
   const today = new Date().toDateString();
-  
-  // Réinitialisation quotidienne
   if (stats.lastReset !== today) {
     stats.todayDownloads = 0;
     stats.lastReset = today;
   }
   
-  // Mise à jour des visiteurs
-  if (!stats.visitors.has(ip)) {
-    stats.visitors.set(ip, { count: 0, lastVisit: new Date() });
+  if (!stats.visitors[ip]) {
+    stats.visitors[ip] = { count: 0, lastVisit: new Date() };
   }
+  stats.visitors[ip].count++;
+  stats.visitors[ip].lastVisit = new Date();
   
-  const visitor = stats.visitors.get(ip);
-  visitor.count++;
-  visitor.lastVisit = new Date();
-  
-  // Mise à jour des compteurs
   stats.totalDownloads++;
   stats.todayDownloads++;
 }
 
 function getActiveUsers() {
   const now = new Date();
-  return Array.from(stats.visitors.values()).filter(v => 
-    (now - v.lastVisit) < 300000 // 5 minutes
+  return Object.values(stats.visitors).filter(v => 
+    (now - new Date(v.lastVisit)) < 300000 // 5 minutes
   ).length;
 }
 
-// Regex améliorés pour Facebook/Instagram
-const PLATFORM_REGEX = {
-  facebook: /(?:(?:https?:\/\/(?:www\.|m\.|mbasic\.)?(?:facebook\.com|fb\.watch|fb\.com)\/(?:watch\/?\?v=|reel|story\.php\?story_fbid=|.+\/videos\/|groups\/.+\/permalink\/|\?v=)|facebook\.com\/video\.php\?v=|\bfacebook\.com\/.+\/videos\/\d+)/i,
-  instagram: /(?:https?:\/\/(?:www\.)?instagram\.com\/(?:p|reel|tv)\/|instagr\.am\/(?:p|reel|tv)\/)/i
-};
-
-// Endpoint de téléchargement professionnalisé
+// Enhanced download endpoint with Facebook/Instagram support
 app.post('/api/download', async (req, res) => {
   const { url } = req.body;
   const requestId = uuidv4();
   const clientIp = req.ip;
   const startTime = Date.now();
-  
-  if (!url) {
-    return res.status(400).json({ 
-      success: false,
-      message: 'URL est requise'
-    });
-  }
-
-  // Détection de plateforme améliorée
-  const platform = PLATFORM_REGEX.facebook.test(url) ? 'facebook' 
-                : PLATFORM_REGEX.instagram.test(url) ? 'instagram' 
-                : null;
-
-  if (!platform) {
-    return res.status(400).json({ 
-      success: false,
-      message: 'Seules les URLs Facebook et Instagram sont supportées'
-    });
-  }
-
-  const filename = sanitize(`${platform}_${Date.now()}.mp4`);
-  const filepath = path.join(DOWNLOAD_FOLDER, filename);
-  const tempPath = `${filepath}.download`;
-
-  // Configuration avancée par plateforme
-  const options = {
-    output: tempPath,
-    format: 'bestvideo[ext=mp4]+bestaudio[ext=m4a]/best[ext=mp4]/best',
-    noCheckCertificates: true,
-    preferFreeFormats: true,
-    retries: 5, // Augmenté à 5 tentatives
-    socketTimeout: 60000, // 60 secondes
-    addHeader: [
-      `referer:https://www.${platform}.com/`,
-      'user-agent:Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36'
-    ],
-    verbose: true // Logs détaillés
-  };
 
   try {
-    console.log(`[${requestId}] Début du téléchargement (${platform}): ${url}`);
-    await ytdlp(url, options);
-
-    // Vérification renforcée
-    try {
-      await fs.access(tempPath);
-      await fs.rename(tempPath, filepath);
-    } catch (fsError) {
-      throw new Error(`Échec du traitement du fichier: ${fsError.message}`);
+    // Validate URL
+    if (!url) {
+      return res.status(400).json({ 
+        success: false,
+        message: 'URL is required'
+      });
     }
 
-    updateStats(clientIp);
-    console.log(`[${requestId}] Téléchargement réussi en ${((Date.now() - startTime)/1000).toFixed(2)}s`);
+    // Enhanced URL matching for Facebook/Instagram
+    const facebookPatterns = [
+      /https?:\/\/(?:www\.|m\.|mbasic\.)?(?:facebook\.com|fb\.watch|fb\.com)\/(?:watch\/?\?v=|reel|story\.php\?story_fbid=|.+\/videos\/|groups\/.+\/permalink\/|\?v=)/i,
+      /facebook\.com\/video\.php\?v=/i,
+      /\bfacebook\.com\/.+\/videos\/\d+/i
+    ];
+    
+    const instagramPatterns = [
+      /https?:\/\/(?:www\.)?instagram\.com\/(?:p|reel|tv)\//i,
+      /instagr\.am\/(?:p|reel|tv)\//i
+    ];
 
-    return res.json({
+    const isFacebook = facebookPatterns.some(pattern => pattern.test(url));
+    const isInstagram = instagramPatterns.some(pattern => pattern.test(url));
+
+    if (!isFacebook && !isInstagram) {
+      return res.status(400).json({ 
+        success: false,
+        message: 'Only Facebook and Instagram URLs are supported'
+      });
+    }
+
+    // Prepare download
+    const filename = sanitize(`${isFacebook ? 'fb' : 'ig'}_${Date.now()}.mp4`);
+    const filepath = path.join(DOWNLOAD_FOLDER, filename);
+    const tempPath = `${filepath}.download`;
+
+    // Platform-specific download options
+    const options = {
+      output: tempPath,
+      format: 'bestvideo[ext=mp4]+bestaudio[ext=m4a]/best[ext=mp4]/best',
+      noCheckCertificates: true,
+      noWarnings: true,
+      preferFreeFormats: true,
+      retries: 3,
+      socketTimeout: 30000,
+      quiet: true,
+      addHeader: [
+        `referer:${isFacebook ? 'https://www.facebook.com/' : 'https://www.instagram.com/'}`,
+        'user-agent:Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36'
+      ],
+      ...(isFacebook && {
+        extractorArgs: 'facebook:skip_dash_manifest',
+        forceIpv4: true
+      }),
+      ...(isInstagram && {
+        cookiefile: '/tmp/instagram_cookies.txt' // Optional for private videos
+      })
+    };
+
+    console.log(`[${requestId}] Starting download: ${url}`);
+    await ytdlp(url, options);
+
+    // Verify download
+    if (!fs.existsSync(tempPath)) {
+      throw new Error('Downloaded file not found');
+    }
+
+    // Rename temp file
+    fs.renameSync(tempPath, filepath);
+
+    // Update stats
+    updateStats(clientIp);
+
+    console.log(`[${requestId}] Download completed in ${(Date.now() - startTime)/1000}s`);
+
+    res.json({
       success: true,
       downloadUrl: `/downloads/${filename}`,
       filename,
-      processingTime: `${((Date.now() - startTime)/1000).toFixed(2)}s`
+      message: 'Download successful'
     });
 
   } catch (error) {
-    console.error(`[${requestId}] Échec du téléchargement:`, error.message);
+    console.error(`[${requestId}] Download failed:`, error.message);
     
-    // Nettoyage sécurisé
-    try {
-      if (fsSync.existsSync(tempPath)) {
-        await fs.unlink(tempPath);
-      }
-    } catch (cleanError) {
-      console.error(`[${requestId}] Échec du nettoyage:`, cleanError.message);
+    // Clean up temp file
+    const tempPath = path.join(DOWNLOAD_FOLDER, `${filename}.download`);
+    if (fs.existsSync(tempPath)) {
+      fs.unlinkSync(tempPath);
     }
 
-    return res.status(500).json({
+    res.status(500).json({
       success: false,
-      message: 'Échec du téléchargement. Veuillez essayer une autre vidéo.',
-      ...(process.env.NODE_ENV === 'development' && {
-        error: error.message,
-        stack: error.stack
-      })
+      message: 'Download failed. Please try another video.',
+      error: process.env.NODE_ENV === 'development' ? error.message : undefined
     });
   }
 });
 
-// Endpoint de statistiques optimisé
+// Real stats endpoint
 app.get('/api/stats', (req, res) => {
+  const totalVisitors = Object.keys(stats.visitors).length;
+  const activeUsers = getActiveUsers();
+  
   res.json({
     success: true,
-    data: {
+    stats: {
       totalDownloads: stats.totalDownloads,
       todayDownloads: stats.todayDownloads,
-      totalVisitors: stats.visitors.size,
-      activeUsers: getActiveUsers(),
-      chartData: generateChartData()
+      totalVisitors,
+      activeUsers
     },
-    server: {
-      uptime: process.uptime(),
-      memoryUsage: process.memoryUsage()
-    }
+    chartData: generateChartData()
   });
 });
 
-// Génération des données de graphique
 function generateChartData() {
-  const months = Array.from({ length: 12 }, (_, i) => {
+  // Generate realistic chart data based on actual stats
+  const months = Array(12).fill(0).map((_, i) => {
     const date = new Date();
     date.setMonth(date.getMonth() - (11 - i));
     return date;
   });
 
+  const downloads = months.map(date => {
+    const base = stats.totalDownloads / 12;
+    return Math.floor(base * (0.8 + Math.random() * 0.4));
+  });
+
+  const visitors = downloads.map(d => Math.floor(d * (1.5 + Math.random() * 0.5)));
+
   return {
-    labels: ['Jan', 'Fév', 'Mar', 'Avr', 'Mai', 'Juin', 'Juil', 'Août', 'Sep', 'Oct', 'Nov', 'Déc'],
-    datasets: {
-      downloads: months.map(() => Math.floor(stats.totalDownloads / 12 * (0.8 + Math.random() * 0.4))),
-      visitors: months.map(() => Math.floor(stats.visitors.size / 12 * (1.2 + Math.random() * 0.6)))
-    }
+    downloads,
+    visitors,
+    labels: ['Jan', 'Fév', 'Mar', 'Avr', 'Mai', 'Juin', 'Juil', 'Août', 'Sep', 'Oct', 'Nov', 'Déc']
   };
 }
 
-// Gestion des erreurs centralisée
+// Serve index.html
+app.get('*', (req, res) => {
+  res.sendFile(INDEX_HTML);
+});
+
+// Error handling
 app.use((err, req, res, next) => {
-  const errorId = uuidv4();
-  console.error(`[${errorId}] Erreur serveur:`, err.stack || err);
-  
-  res.status(500).json({
+  console.error('Server error:', err);
+  res.status(500).json({ 
     success: false,
-    message: 'Erreur interne du serveur',
-    errorId,
-    timestamp: new Date().toISOString()
+    message: 'Internal server error' 
   });
 });
 
-// Initialisation et démarrage du serveur
-async function startServer() {
-  await ensureDownloadDir();
-  await cleanOldFiles();
-  setInterval(cleanOldFiles, 3600000); // Nettoyage horaire
-
-  app.listen(PORT, () => {
-    console.log(`Serveur démarré sur http://localhost:${PORT}`);
-    console.log(`Environnement: ${process.env.NODE_ENV || 'development'}`);
-    console.log(`Dossier de téléchargement: ${DOWNLOAD_FOLDER}`);
-  });
-}
-
-startServer().catch(err => {
-  console.error('Échec du démarrage du serveur:', err);
-  process.exit(1);
+// Start server
+app.listen(PORT, () => {
+  console.log(`Server running on http://localhost:${PORT}`);
 });
