@@ -1,5 +1,5 @@
 #!/bin/bash
-set -e
+set -euo pipefail
 
 echo "🔧 Mise à jour des paquets système..."
 sudo apt-get update -y
