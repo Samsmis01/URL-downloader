@@ -88,7 +88,7 @@ function getActiveUsers() {
   ).length;
 }
 
-// Enhanced download endpoint
+// Enhanced download endpoint with Facebook/Instagram support
 app.post('/api/download', async (req, res) => {
   const { url } = req.body;
   const requestId = uuidv4();
@@ -104,8 +104,9 @@ app.post('/api/download', async (req, res) => {
       });
     }
 
-    const isFacebook = /(facebook\.com\/(watch|reel)|fb\.watch|fb\.com\/watch\?v=)/i.test(url);
-    const isInstagram = /(instagram\.com\/(p|reel|tv)|instagr\.am\/(p|reel|tv))/i.test(url);
+    // Enhanced URL matching for Facebook/Instagram
+    const isFacebook = /(?:https?:\/\/(?:www\.|m\.|mbasic\.)?(?:facebook\.com|fb\.watch|fb\.com)\/(?:watch\/?\?v=|reel|story\.php\?story_fbid=|.+?\/videos\/|groups\/.+?\/permalink\/|\?v=)|facebook\.com\/video\.php\?v=|\bfacebook\.com\/.+\/videos\/\d+)/i.test(url);
+    const isInstagram = /(?:https?:\/\/(?:www\.)?instagram\.com\/(?:p|reel|tv)\/|instagr\.am\/(?:p|reel|tv)\/)/i.test(url);
 
     if (!isFacebook && !isInstagram) {
       return res.status(400).json({ 
@@ -119,7 +120,7 @@ app.post('/api/download', async (req, res) => {
     const filepath = path.join(DOWNLOAD_FOLDER, filename);
     const tempPath = `${filepath}.download`;
 
-    // Download options
+    // Platform-specific download options
     const options = {
       output: tempPath,
       format: 'bestvideo[ext=mp4]+bestaudio[ext=m4a]/best[ext=mp4]/best',
@@ -128,11 +129,18 @@ app.post('/api/download', async (req, res) => {
       preferFreeFormats: true,
       retries: 3,
       socketTimeout: 30000,
+      quiet: true,
       addHeader: [
-        'referer:https://www.facebook.com/',
-        'user-agent:Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
+        `referer:${isFacebook ? 'https://www.facebook.com/' : 'https://www.instagram.com/'}`,
+        'user-agent:Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36'
       ],
-      quiet: true
+      ...(isFacebook && {
+        extractorArgs: 'facebook:skip_dash_manifest',
+        forceIpv4: true
+      }),
+      ...(isInstagram && {
+        cookiefile: '/tmp/instagram_cookies.txt' // Optional for private videos
+      })
     };
 
     console.log(`[${requestId}] Starting download: ${url}`);
