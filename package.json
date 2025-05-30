@@ -1,32 +1,44 @@
 {
-  "name": "fb-insta-downloader",
-  "version": "1.0.0",
-  "description": "Téléchargeur de vidéos Facebook/Instagram avec statistiques en temps réel",
+  "name": "ultimate-video-downloader",
+  "version": "2.0.0",
+  "description": "Téléchargeur de vidéos multi-plateformes (Facebook, Instagram, YouTube, TikTok, Twitter, etc.) avec statistiques temps réel",
   "main": "src/server.js",
   "scripts": {
-    "preinstall": "echo '🔧 Vérification des prérequis système...'",
-    "install": "echo '📦 Installation des dépendances Node.js...'",
-    "postinstall": "echo '✅ Installation Node.js terminée !'",
-    "render-setup": "chmod +x ./render-setup.sh && ./render-setup.sh",
-    "start": "node src/server.js",
-    "dev": "nodemon src/server.js --watch src",
-    "test": "echo \"Error: no test specified\" && exit 1",
-    "lint": "eslint src/",
-    "prepare": "husky install"
+    "preinstall": "echo '🔧 Vérification des prérequis système...' && node -v && npm -v",
+    "install": "echo '📦 Installation des dépendances...'",
+    "postinstall": "echo '✅ Installation terminée !' && npm run setup",
+    "setup": "bash ./scripts/setup.sh",
+    "start": "NODE_ENV=production node src/server.js",
+    "dev": "NODE_ENV=development nodemon src/server.js --watch src --delay 1500ms",
+    "prod": "pm2 start src/server.js --name video-downloader --watch --time",
+    "test": "jest --coverage --detectOpenHandles",
+    "lint": "eslint src/ --fix",
+    "security-check": "npm audit --production --audit-level=critical",
+    "update-deps": "npx npm-check-updates -u && npm install",
+    "prepare": "husky install",
+    "clean": "rimraf downloads/* tmp/*"
   },
   "dependencies": {
     "express": "^4.18.2",
-    "yt-dlp-exec": "^1.0.2",
-    "uuid": "^9.0.0",
+    "yt-dlp-exec": "^2.0.0",
+    "uuid": "^9.0.1",
     "sanitize-filename": "^1.6.3",
-    "express-rate-limit": "^6.7.0",
+    "express-rate-limit": "^6.8.1",
     "cors": "^2.8.5",
     "fs-extra": "^11.2.0",
     "morgan": "^1.10.0",
     "helmet": "^7.1.0",
-    "chart.js": "^4.3.0",
+    "chart.js": "^4.4.0",
     "express-session": "^1.17.3",
-    "node-fetch": "^3.3.2"
+    "node-fetch": "^3.3.2",
+    "compression": "^1.7.4",
+    "winston": "^3.11.0",
+    "serve-favicon": "^2.5.0",
+    "puppeteer": "^21.7.0",
+    "proxy-agent": "^6.3.1",
+    "content-disposition": "^0.5.4",
+    "rate-limit-redis": "^3.0.1",
+    "ioredis": "^5.3.2"
   },
   "devDependencies": {
     "nodemon": "^3.1.0",
@@ -34,17 +46,29 @@
     "eslint": "^8.56.0",
     "eslint-config-airbnb-base": "^15.0.0",
     "eslint-plugin-import": "^2.29.1",
-    "husky": "^9.0.11"
+    "eslint-plugin-security": "^1.7.1",
+    "husky": "^9.0.11",
+    "jest": "^29.7.0",
+    "supertest": "^6.3.4",
+    "pm2": "^5.3.1",
+    "nock": "^13.3.6",
+    "npm-check-updates": "^16.14.0"
   },
   "engines": {
-    "node": ">=18.0.0",
-    "npm": ">=9.0.0"
+    "node": ">=18.12.0",
+    "npm": ">=9.8.1"
   },
   "keywords": [
     "video",
     "downloader",
     "facebook",
     "instagram",
+    "youtube",
+    "tiktok",
+    "twitter",
+    "vimeo",
+    "dailymotion",
+    "soundcloud",
     "yt-dlp",
     "express",
     "statistics"
@@ -53,9 +77,18 @@
   "license": "MIT",
   "repository": {
     "type": "git",
-    "url": "https://github.com/Samsmis01/URL-downloader"
+    "url": "https://github.com/Samsmis01/ultimate-video-downloader.git"
   },
   "bugs": {
-    "url": "https://github.com/Samsmis01/URL-downloader/issues"
+    "url": "https://github.com/Samsmis01/ultimate-video-downloader/issues"
   },
-  "homepage": "https://github.com/Samsmis01/URL-downloader#readme"}
+  "homepage": "https://github.com/Samsmis01/ultimate-video-downloader#readme",
+  "volta": {
+    "node": "18.12.0",
+    "npm": "9.8.1"
+  },
+  "config": {
+    "commitizen": {
+      "path": "cz-conventional-changelog"
+    }
+  }
