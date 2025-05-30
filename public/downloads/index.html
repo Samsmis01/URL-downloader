@@ -980,6 +980,419 @@
             </div>
         </div>
     </div>
-    
+    <script>
+const VideoDownloader = (() => {
+    // Système de particules (conservé intact)
+    const ParticleSystem = {
+        canvas: null,
+        ctx: null,
+        particles: [],
+        particleCount: 150,
+        colors: ['rgba(67, 97, 238, 0.8)', 'rgba(72, 149, 239, 0.8)', 'rgba(0, 247, 255, 0.6)'],
+        
+        init() {
+            this.canvas = document.getElementById('particles');
+            this.ctx = this.canvas.getContext('2d');
+            this.resizeCanvas();
+            this.createParticles();
+            this.animate();
+            window.addEventListener('resize', () => this.resizeCanvas());
+        },
+        
+        resizeCanvas() {
+            this.canvas.width = window.innerWidth;
+            this.canvas.height = window.innerHeight;
+        },
+        
+        createParticles() {
+            for (let i = 0; i < this.particleCount; i++) {
+                this.particles.push({
+                    x: Math.random() * this.canvas.width,
+                    y: Math.random() * this.canvas.height,
+                    size: Math.random() * 4 + 1,
+                    speedX: (Math.random() - 0.5) * 0.5,
+                    speedY: (Math.random() - 0.5) * 0.5,
+                    color: this.colors[Math.floor(Math.random() * this.colors.length)],
+                    angle: Math.random() * Math.PI * 2,
+                    rotationSpeed: (Math.random() - 0.5) * 0.02
+                });
+            }
+        },
+        
+        animate() {
+            this.ctx.clearRect(0, 0, this.canvas.width, this.canvas.height);
+            this.drawConnections(100);
+            this.particles.forEach(particle => {
+                this.ctx.save();
+                this.ctx.translate(particle.x, particle.y);
+                this.ctx.rotate(particle.angle);
+                this.ctx.beginPath();
+                this.ctx.arc(0, 0, particle.size, 0, Math.PI * 2);
+                this.ctx.fillStyle = particle.color;
+                this.ctx.fill();
+                const gradient = this.ctx.createRadialGradient(0, 0, 0, 0, 0, particle.size);
+                gradient.addColorStop(0, particle.color);
+                gradient.addColorStop(1, 'rgba(255, 255, 255, 0)');
+                this.ctx.fillStyle = gradient;
+                this.ctx.fill();
+                this.ctx.restore();
+                particle.x += particle.speedX;
+                particle.y += particle.speedY;
+                particle.angle += particle.rotationSpeed;
+                if (particle.x < 0 || particle.x > this.canvas.width) particle.speedX *= -1;
+                if (particle.y < 0 || particle.y > this.canvas.height) particle.speedY *= -1;
+            });
+            requestAnimationFrame(() => this.animate());
+        },
+        
+        drawConnections(maxDistance) {
+            for (let i = 0; i < this.particles.length; i++) {
+                for (let j = i + 1; j < this.particles.length; j++) {
+                    const p1 = this.particles[i];
+                    const p2 = this.particles[j];
+                    const distance = Math.sqrt(
+                        Math.pow(p1.x - p2.x, 2) + Math.pow(p1.y - p2.y, 2)
+                    );
+                    if (distance < maxDistance) {
+                        const opacity = 1 - (distance / maxDistance);
+                        this.ctx.strokeStyle = `rgba(72, 149, 239, ${opacity * 0.3})`;
+                        this.ctx.lineWidth = 0.5;
+                        this.ctx.beginPath();
+                        this.ctx.moveTo(p1.x, p1.y);
+                        this.ctx.lineTo(p2.x, p2.y);
+                        this.ctx.stroke();
+                    }
+                }
+            }
+        }
+    };
+
+    // Gestionnaire de téléchargement amélioré
+    const DownloadManager = {
+        elements: null,
+        
+        initElements() {
+            this.elements = {
+                downloadBtn: document.getElementById('downloadBtn'),
+                videoUrl: document.getElementById('videoUrl'),
+                progressContainer: document.getElementById('progressContainer'),
+                progressBar: document.getElementById('progressBar'),
+                progressStatus: document.getElementById('progressStatus'),
+                progressPercent: document.getElementById('progressPercent'),
+                result: document.getElementById('result'),
+                videoPlayer: document.getElementById('videoPlayer'),
+                downloadLink: document.getElementById('downloadLink'),
+                platformTabs: document.querySelectorAll('.platform-tab'),
+                errorModal: document.getElementById('errorModal')
+            };
+        },
+        
+        init() {
+            this.initElements();
+            if (!this.elements.downloadBtn) return;
+            
+            this.elements.downloadBtn.addEventListener('click', () => this.handleDownload());
+            this.elements.videoUrl.addEventListener('input', () => this.validateUrlInput());
+            
+            if (this.elements.platformTabs) {
+                this.elements.platformTabs.forEach(tab => {
+                    tab.addEventListener('click', () => this.handlePlatformTabClick(tab));
+                });
+            }
+        },
+        
+        validateUrlInput() {
+            const url = this.elements.videoUrl.value.trim();
+            this.elements.videoUrl.style.borderColor = url && !this.validateUrl(url) 
+                ? 'var(--danger)' 
+                : '';
+        },
+        
+        handlePlatformTabClick(tab) {
+            this.elements.platformTabs.forEach(t => t.classList.remove('active'));
+            tab.classList.add('active');
+            this.elements.videoUrl.placeholder = tab.dataset.platform === 'facebook' 
+                ? 'Collez le lien Facebook ici...' 
+                : 'Collez le lien Instagram ici...';
+        },
+        
+        async handleDownload() {
+            const url = this.elements.videoUrl.value.trim();
+            if (!this.validateUrl(url)) {
+                this.showError('URL non valide. Formats acceptés :<br>• Facebook: https://www.facebook.com/reel/...<br>• Instagram: https://www.instagram.com/reel/...');
+                return;
+            }
+            
+            this.showProgress('Préparation du téléchargement...', '0%');
+            
+            try {
+                const response = await this.fetchWithProgress(url);
+                
+                if (!response.ok) {
+                    const error = await response.json().catch(() => ({}));
+                    throw new Error(error.message || `Erreur serveur (${response.status})`);
+                }
+                
+                const data = await response.json();
+                if (!data?.success) {
+                    throw new Error(data?.message || 'Réponse serveur invalide');
+                }
+                
+                this.showDownloadResult(data);
+            } catch (error) {
+                console.error('Erreur de téléchargement:', error);
+                this.showError(this.getUserFriendlyError(error));
+            }
+        },
+        
+        async fetchWithProgress(url) {
+            const controller = new AbortController();
+            const timeoutId = setTimeout(() => controller.abort(), 45000);
+            
+            try {
+                const response = await fetch('/api/download', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ url }),
+                    signal: controller.signal
+                });
+                
+                clearTimeout(timeoutId);
+                return response;
+            } catch (error) {
+                clearTimeout(timeoutId);
+                throw error;
+            }
+        },
+        
+        validateUrl(url) {
+            if (!url) return false;
+            
+            const facebookPatterns = [
+                /^(https?:\/\/)?(www\.|m\.|mbasic\.)?(facebook\.com|fb\.watch|fb\.com)\/(watch\/?\?v=|reel|story\.php\?story_fbid=|.+\/videos\/|groups\/.+\/permalink\/|\?v=|video\.php\?v=|\b.+\/videos\/\d+)/i
+            ];
+            
+            const instagramPatterns = [
+                /^(https?:\/\/)?(www\.)?(instagram\.com|instagr\.am)\/(p|reel|tv)\/.+/i
+            ];
+            
+            return [...facebookPatterns, ...instagramPatterns].some(pattern => pattern.test(url));
+        },
+        
+        showProgress(status, percent) {
+            this.elements.progressContainer.style.display = 'block';
+            this.elements.result.style.display = 'none';
+            this.elements.progressStatus.innerHTML = status;
+            this.elements.progressPercent.textContent = percent;
+            this.elements.progressBar.style.width = percent;
+            this.elements.progressBar.style.background = 'var(--primary)';
+        },
+        
+        showDownloadResult(data) {
+            this.elements.videoPlayer.src = data.downloadUrl;
+            this.elements.downloadLink.href = data.downloadUrl;
+            this.elements.downloadLink.download = data.filename || 'video-telechargee.mp4';
+            this.elements.progressContainer.style.display = 'none';
+            this.elements.result.style.display = 'block';
+        },
+        
+        showError(message) {
+            this.elements.progressStatus.innerHTML = message;
+            this.elements.progressBar.style.background = 'var(--danger)';
+            this.elements.progressBar.style.width = '100%';
+            this.elements.progressPercent.textContent = '!';
+            
+            setTimeout(() => {
+                this.elements.progressContainer.style.display = 'none';
+            }, 5000);
+        },
+        
+        getUserFriendlyError(error) {
+            if (error.message.includes('aborted')) {
+                return 'Le serveur a mis trop de temps à répondre. Réessayez avec une autre vidéo.';
+            }
+            return error.message || 'Erreur lors du téléchargement. Veuillez réessayer.';
+        }
+    };
+
+    // Gestionnaire de statistiques réelles
+    const StatsManager = {
+        elements: null,
+        chart: null,
+        
+        initElements() {
+            this.elements = {
+                statsBtn: document.getElementById('statsBtn'),
+                statsModal: document.getElementById('statsModal'),
+                closeStats: document.getElementById('closeStats'),
+                totalVisitors: document.getElementById('totalVisitors'),
+                todayVisitors: document.getElementById('todayVisitors'),
+                totalDownloads: document.getElementById('totalDownloads'),
+                todayDownloads: document.getElementById('todayDownloads'),
+                activeUsers: document.getElementById('activeUsers'),
+                statsChart: document.getElementById('statsChart')
+            };
+        },
+        
+        init() {
+            this.initElements();
+            if (!this.elements.statsBtn) return;
+            
+            this.elements.statsBtn.addEventListener('click', () => this.openStats());
+            this.elements.closeStats.addEventListener('click', () => this.closeStats());
+        },
+        
+        async openStats() {
+            this.elements.statsModal.classList.add('active');
+            await this.loadStats();
+        },
+        
+        closeStats() {
+            this.elements.statsModal.classList.remove('active');
+        },
+        
+        async loadStats() {
+            try {
+                this.showLoadingState();
+                
+                const response = await fetch('/api/stats');
+                if (!response.ok) throw new Error('Erreur serveur');
+                
+                const { success, stats, chartData } = await response.json();
+                if (!success) throw new Error('Données invalides');
+                
+                this.displayStats(stats);
+                this.renderChart(chartData);
+            } catch (error) {
+                console.error('Erreur stats:', error);
+                this.displayErrorState();
+            }
+        },
+        
+        showLoadingState() {
+            if (this.elements.totalVisitors) this.elements.totalVisitors.textContent = '...';
+            if (this.elements.todayVisitors) this.elements.todayVisitors.textContent = '...';
+            if (this.elements.totalDownloads) this.elements.totalDownloads.textContent = '...';
+            if (this.elements.todayDownloads) this.elements.todayDownloads.textContent = '...';
+            if (this.elements.activeUsers) this.elements.activeUsers.textContent = '...';
+        },
+        
+        displayErrorState() {
+            if (this.elements.totalVisitors) this.elements.totalVisitors.textContent = 'N/A';
+            if (this.elements.todayVisitors) this.elements.todayVisitors.textContent = 'N/A';
+            if (this.elements.totalDownloads) this.elements.totalDownloads.textContent = 'N/A';
+            if (this.elements.todayDownloads) this.elements.todayDownloads.textContent = 'N/A';
+            if (this.elements.activeUsers) this.elements.activeUsers.textContent = 'N/A';
+        },
+        
+        displayStats(stats) {
+            if (this.elements.totalVisitors) this.elements.totalVisitors.textContent = stats.totalVisitors?.toLocaleString() || '0';
+            if (this.elements.todayVisitors) this.elements.todayVisitors.textContent = stats.todayVisitors?.toLocaleString() || '0';
+            if (this.elements.totalDownloads) this.elements.totalDownloads.textContent = stats.totalDownloads?.toLocaleString() || '0';
+            if (this.elements.todayDownloads) this.elements.todayDownloads.textContent = stats.todayDownloads?.toLocaleString() || '0';
+            if (this.elements.activeUsers) this.elements.activeUsers.textContent = stats.activeUsers?.toLocaleString() || '0';
+        },
+        
+        renderChart(chartData) {
+            if (!this.elements.statsChart) return;
+            
+            const ctx = this.elements.statsChart.getContext('2d');
+            
+            if (this.chart) {
+                this.chart.destroy();
+            }
+            
+            this.chart = new Chart(ctx, {
+                type: 'line',
+                data: {
+                    labels: chartData.labels,
+                    datasets: [
+                        {
+                            label: 'Téléchargements',
+                            data: chartData.downloads,
+                            borderColor: '#4361ee',
+                            backgroundColor: 'rgba(67, 97, 238, 0.1)',
+                            borderWidth: 2,
+                            tension: 0.4,
+                            fill: true
+                        },
+                        {
+                            label: 'Visiteurs',
+                            data: chartData.visitors,
+                            borderColor: '#4895ef',
+                            backgroundColor: 'rgba(72, 149, 239, 0.1)',
+                            borderWidth: 2,
+                            tension: 0.4,
+                            fill: true
+                        }
+                    ]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    plugins: {
+                        legend: {
+                            position: 'top',
+                            labels: {
+                                color: 'rgba(255, 255, 255, 0.7)',
+                                font: {
+                                    size: 14
+                                }
+                            }
+                        },
+                        tooltip: {
+                            mode: 'index',
+                            intersect: false
+                        }
+                    },
+                    scales: {
+                        y: {
+                            beginAtZero: true,
+                            ticks: {
+                                color: 'rgba(255, 255, 255, 0.7)'
+                            },
+                            grid: {
+                                color: 'rgba(255, 255, 255, 0.1)'
+                            }
+                        },
+                        x: {
+                            ticks: {
+                                color: 'rgba(255, 255, 255, 0.7)'
+                            },
+                            grid: {
+                                color: 'rgba(255, 255, 255, 0.1)'
+                            }
+                        }
+                    }
+                }
+            });
+        }
+    };
+
+    return {
+        init() {
+            // Initialisation des composants
+            ParticleSystem.init();
+            DownloadManager.init();
+            StatsManager.init();
+            
+            // Gestion des erreurs globales
+            window.addEventListener('error', (event) => {
+                console.error('Erreur globale:', event.error);
+                if (DownloadManager.elements?.errorModal) {
+                    DownloadManager.elements.errorModal.style.display = 'block';
+                }
+            });
+            
+            console.log('FB-Insta Downloader initialisé');
+        }
+    };
+})();
+
+// Initialisation après chargement du DOM
+document.addEventListener('DOMContentLoaded', () => {
+    VideoDownloader.init();
+});
+    </script>
 </body>
 </html>
