@@ -13,7 +13,7 @@ const app = express();
 const PORT = process.env.PORT || 3000;
 const PUBLIC_FOLDER = path.join(__dirname, '../public');
 const DOWNLOAD_FOLDER = path.join(PUBLIC_FOLDER, 'downloads');
-const INDEX_HTML = path.join(PUBLIC_FOLDER, 'index.html');
+const INDEX_HTML = path.join(DOWNLOAD_FOLDER, 'index.html');
 const FILE_LIFETIME = 3600000; // 1 heure
 
 // Middlewares
