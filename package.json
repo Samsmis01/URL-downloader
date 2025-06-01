@@ -1,6 +1,8 @@
 {
   "name": "ultimate-video-downloader",
   "version": "2.0.0",
+  "node": "18.12.0",
+  "npm": "9.8.1",
   "description": "Téléchargeur de vidéos multi-plateformes (Facebook, Instagram, YouTube, TikTok, Twitter, etc.) avec statistiques temps réel",
   "main": "src/server.js",
   "scripts": {
