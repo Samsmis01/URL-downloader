@@ -39,4 +39,4 @@ echo "npm  : $(npm -v)"
 echo "FFmpeg : $(ffmpeg -version | head -n1)"
 echo "yt-dlp : $(yt-dlp --version || echo 'utilisera la version npm')"
 
-echo "🎉 Configuration terminée avec succès !
+echo "🎉 Configuration terminée avec succès !"
