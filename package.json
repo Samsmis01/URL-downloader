@@ -7,7 +7,7 @@
     "preinstall": "echo '🔧 Vérification des prérequis système...' && node -v && npm -v",
     "install": "echo '📦 Installation des dépendances...'",
     "postinstall": "echo '✅ Installation terminée !' && npm run setup",
-    "setup": "bash ./scripts/setup.sh",
+    "setup": "bash ./render-setup.sh",
     "start": "NODE_ENV=production node src/server.js",
     "dev": "NODE_ENV=development nodemon src/server.js --watch src --delay 1500ms",
     "prod": "pm2 start src/server.js --name video-downloader --watch --time",
