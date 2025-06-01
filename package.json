@@ -18,6 +18,9 @@
     "prepare": "husky install",
     "clean": "rimraf downloads/* tmp/*"
   },
+  "resolutions": {
+  "path-to-reg exp": "6.2.1"
+},
   "dependencies": {
     "express": "^5.1.0",
     "yt-dlp-exec": "^1.0.2",
