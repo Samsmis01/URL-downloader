@@ -5,18 +5,18 @@ services:
     region: frankfurt
     plan: free
     buildCommand: |
-      chmod +x ./render-setup.sh
-      ./render-setup.sh
+      # Installation sans Python
+      mkdir -p $HOME/.local/bin
+      curl -L https://github.com/yt-dlp/yt-dlp/releases/latest/download/yt-dlp -o $HOME/.local/bin/yt-dlp
+      chmod +x $HOME/.local/bin/yt-dlp
       npm install --production
-      # Mise à jour du PATH pour yt-dlp
-      export PATH=$HOME/.local/bin:$PATH
     startCommand: npm start
     envVars:
       - key: YT_DLP_PATH
-        value: $HOME/.local/bin/yt-dlp  # Chemin corrigé
+        value: $HOME/.local/bin/yt-dlp  # Chemin correct
       - key: NODE_ENV
         value: production
       - key: PATH
-        value: $HOME/.local/bin:$PATH  # Ajout au PATH système
+        value: $HOME/.local/bin:$PATH  # Inclut le chemin yt-dlp
     healthCheckPath: /health
     autoDeploy: true
