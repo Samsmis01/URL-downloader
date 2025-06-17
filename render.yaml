@@ -7,14 +7,16 @@ services:
     buildCommand: |
       chmod +x ./render-setup.sh
       ./render-setup.sh
-      # Installation sécurisée de yt-dlp sans conflit système
-      python -m pip install --user yt-dlp  # Utilisation de --user
       npm install --production
+      # Mise à jour du PATH pour yt-dlp
+      export PATH=$HOME/.local/bin:$PATH
     startCommand: npm start
     envVars:
       - key: YT_DLP_PATH
-        value: /usr/local/bin/yt-dlp  # À vérifier après installation
+        value: $HOME/.local/bin/yt-dlp  # Chemin corrigé
       - key: NODE_ENV
         value: production
+      - key: PATH
+        value: $HOME/.local/bin:$PATH  # Ajout au PATH système
     healthCheckPath: /health
     autoDeploy: true
