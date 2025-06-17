@@ -1,4 +1,4 @@
-{
+  {
   "name": "ultimate-video-downloader",
   "version": "2.0.0",
   "description": "Téléchargeur de vidéos multi-plateformes (Facebook, Instagram, YouTube, TikTok, Twitter, etc.) avec statistiques temps réel",
@@ -95,4 +95,5 @@
   "bugs": {
     "url": "https://github.com/Samsmis01/ultimate-video-downloader/issues"
   },
-  "homepage": "https://github.com/Samsmis01/ultimate-video-downloader#readme"}
+  "homepage": "https://github.com/Samsmis01/ultimate-video-downloader#readme"
+  }
