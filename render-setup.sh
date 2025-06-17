@@ -11,7 +11,7 @@ chmod -R 755 public/downloads tmp logs
 if [ -n "${RENDER:-}" ]; then
   echo "🛠 Environnement Render détecté"
   
-  # Solution pour Render (sans sudo)
+  # Solution optimisée pour Render
   echo "📦 Vérification des dépendances sur Render..."
   
   if ! command -v ffmpeg &> /dev/null; then
@@ -20,11 +20,17 @@ if [ -n "${RENDER:-}" ]; then
   fi
   
   if ! command -v yt-dlp &> /dev/null; then
-    echo "⬇️ Installation de yt-dlp via pip..."
+    echo "⬇️ Installation sécurisée de yt-dlp..."
+    # Solution 1: Installation en mode user avec chemin explicite
     python3 -m pip install --user yt-dlp
+    export PATH=$PATH:$HOME/.local/bin
+    
+    # Solution alternative 2: Installation via curl (plus fiable)
+    # curl -L https://github.com/yt-dlp/yt-dlp/releases/latest/download/yt-dlp -o $HOME/.local/bin/yt-dlp
+    # chmod a+rx $HOME/.local/bin/yt-dlp
   fi
 else
-  # Solution pour environnement local (avec sudo)
+  # Solution pour environnement local
   echo "🖥 Environnement local détecté"
   
   echo "🔄 Mise à jour des paquets système..."
@@ -42,11 +48,18 @@ else
   sudo chmod a+rx /usr/local/bin/yt-dlp
 fi
 
+# Vérification de l'installation de yt-dlp
+if ! command -v yt-dlp &> /dev/null; then
+  echo "❌ Échec de l'installation de yt-dlp"
+  exit 1
+fi
+
 echo "✅ Vérification finale :"
 echo "Node: $(node -v || echo 'Non installé')"
 echo "npm: $(npm -v || echo 'Non installé')"
 echo "Python: $(python3 --version || echo 'Non installé')"
 echo "FFmpeg: $(ffmpeg -version | head -n 1 || echo 'Non installé')"
 echo "yt-dlp: $(yt-dlp --version || echo 'Non installé')"
+echo "Chemin yt-dlp: $(which yt-dlp)"
 
-echo "🎉 Configuration terminée avec succès !"
+echo "🎉 Configuration terminée avec succès !
