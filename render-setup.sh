@@ -21,13 +21,19 @@ if [ -n "${RENDER:-}" ]; then
   
   if ! command -v yt-dlp &> /dev/null; then
     echo "⬇️ Installation sécurisée de yt-dlp..."
-    # Solution 1: Installation en mode user avec chemin explicite
-    python3 -m pip install --user yt-dlp
-    export PATH=$PATH:$HOME/.local/bin
+    # Création du répertoire si inexistant
+    mkdir -p "$HOME/.local/bin"
     
-    # Solution alternative 2: Installation via curl (plus fiable)
-    # curl -L https://github.com/yt-dlp/yt-dlp/releases/latest/download/yt-dlp -o $HOME/.local/bin/yt-dlp
-    # chmod a+rx $HOME/.local/bin/yt-dlp
+    # Méthode recommandée: Téléchargement direct
+    curl -L https://github.com/yt-dlp/yt-dlp/releases/latest/download/yt-dlp -o "$HOME/.local/bin/yt-dlp"
+    chmod a+rx "$HOME/.local/bin/yt-dlp"
+    
+    # Ajout au PATH
+    export PATH="$HOME/.local/bin:$PATH"
+    
+    # Alternative commentée (si jamais la méthode curl échoue)
+    # python3 -m pip install --user yt-dlp
+    # export PATH="$HOME/.local/bin:$PATH"
   fi
 else
   # Solution pour environnement local
@@ -48,18 +54,18 @@ else
   sudo chmod a+rx /usr/local/bin/yt-dlp
 fi
 
-# Vérification de l'installation de yt-dlp
-if ! command -v yt-dlp &> /dev/null; then
-  echo "❌ Échec de l'installation de yt-dlp"
-  exit 1
-fi
-
+# Vérification explicite
 echo "✅ Vérification finale :"
 echo "Node: $(node -v || echo 'Non installé')"
 echo "npm: $(npm -v || echo 'Non installé')"
 echo "Python: $(python3 --version || echo 'Non installé')"
 echo "FFmpeg: $(ffmpeg -version | head -n 1 || echo 'Non installé')"
 echo "yt-dlp: $(yt-dlp --version || echo 'Non installé')"
-echo "Chemin yt-dlp: $(which yt-dlp)"
+echo "Chemin yt-dlp: $(which yt-dlp || echo 'Non trouvé')"
 
-echo "🎉 Configuration terminée avec succès !
+if ! command -v yt-dlp &> /dev/null; then
+  echo "❌ Échec critique: yt-dlp non installé"
+  exit 1
+fi
+
+echo "🎉 Configuration terminée avec succès !"
