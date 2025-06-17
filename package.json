@@ -19,8 +19,10 @@
     "clean": "rimraf downloads/* tmp/*"
   },
   "resolutions": {
-    "path-to-regexp": "6.2.1",
-    "**/path-to-regexp": "6.2.1"
+  "path-to-regexp": "6.2.1",
+  "router/node_modules/path-to-regexp": "6.2.1",
+  "express/node_modules/path-to-regexp": "6.2.1"
+  
   },
   "dependencies": {
     "compression": "^1.8.0",
