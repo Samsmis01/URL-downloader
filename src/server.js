@@ -1,22 +1,26 @@
 // ======================================
-// Vérification des dépendances critiques
+// Vérification et installation des dépendances critiques
 // ======================================
-console.log('🔍 Vérification des dépendances...');
 const REQUIRED_MODULES = [
   'express', 'path', 'fs', 'yt-dlp-exec', 'sanitize-filename', 
   'express-rate-limit', 'cors', 'uuid'
 ];
 
-REQUIRED_MODULES.forEach(module => {
+for (const module of REQUIRED_MODULES) {
   try {
     require.resolve(module);
-    console.log(`✅ ${module}`);
   } catch (e) {
-    console.error(`❌ ${module} - MANQUANT`);
-    console.error(`Veuillez exécuter: npm install ${module}`);
-    process.exit(1);
+    console.error(`[INIT] Module manquant détecté: ${module}`);
+    const { execSync } = require('child_process');
+    try {
+      execSync(`npm install ${module} --save`, { stdio: 'inherit' });
+      console.log(`[INIT] ${module} installé avec succès`);
+    } catch (installError) {
+      console.error(`[INIT] Échec de l'installation de ${module}:`, installError);
+      process.exit(1);
+    }
   }
-});
+}
 
 // ======================================
 // Import des dépendances
@@ -41,30 +45,6 @@ const INDEX_HTML = path.join(PUBLIC_FOLDER, 'index.html');
 const FILE_LIFETIME = 60000; // 1 minute (réduit pour les tests)
 
 // ======================================
-// Vérification des permissions
-// ======================================
-try {
-  if (!fs.existsSync(DOWNLOAD_FOLDER)) {
-    fs.mkdirSync(DOWNLOAD_FOLDER, { recursive: true });
-    console.log('✅ Dossier downloads créé');
-  }
-  
-  if (!fs.existsSync(PUBLIC_FOLDER)) {
-    fs.mkdirSync(PUBLIC_FOLDER, { recursive: true });
-    console.log('✅ Dossier public créé');
-  }
-  
-  // Test des permissions d'écriture
-  const testFile = path.join(DOWNLOAD_FOLDER, 'test_permission.txt');
-  fs.writeFileSync(testFile, 'test');
-  fs.unlinkSync(testFile);
-  console.log('✅ Permissions d\'écriture OK');
-} catch (error) {
-  console.error('❌ Erreur de permissions:', error.message);
-  process.exit(1);
-}
-
-// ======================================
 // Middlewares
 // ======================================
 app.use(cors());
@@ -82,6 +62,14 @@ app.use('/api/download', limiter);
 // ======================================
 // Gestion des fichiers
 // ======================================
+if (!fs.existsSync(DOWNLOAD_FOLDER)) {
+  fs.mkdirSync(DOWNLOAD_FOLDER, { recursive: true });
+}
+
+if (!fs.existsSync(PUBLIC_FOLDER)) {
+  fs.mkdirSync(PUBLIC_FOLDER, { recursive: true });
+}
+
 function cleanOldFiles() {
   fs.readdir(DOWNLOAD_FOLDER, (err, files) => {
     if (err) return console.error('Error cleaning files:', err);
@@ -103,31 +91,104 @@ setInterval(cleanOldFiles, 30000);
 cleanOldFiles();
 
 // ======================================
-// Statistiques
+// Statistiques RÉELLES (pas de simulation)
 // ======================================
 const stats = {
   totalDownloads: 0,
   todayDownloads: 0,
   lastReset: new Date().toDateString(),
-  visitors: new Map()
+  visitors: new Map(),
+  dailyStats: new Map() // Pour suivre les stats par jour
 };
+
+// Charger les statistiques depuis un fichier si existant
+const STATS_FILE = path.join(__dirname, 'stats.json');
+function loadStats() {
+  try {
+    if (fs.existsSync(STATS_FILE)) {
+      const data = fs.readFileSync(STATS_FILE, 'utf8');
+      const savedStats = JSON.parse(data);
+      
+      stats.totalDownloads = savedStats.totalDownloads || 0;
+      stats.todayDownloads = savedStats.todayDownloads || 0;
+      stats.lastReset = savedStats.lastReset || new Date().toDateString();
+      
+      // Charger les visiteurs
+      if (savedStats.visitors) {
+        stats.visitors = new Map(Object.entries(savedStats.visitors));
+      }
+      
+      // Charger les stats quotidiennes
+      if (savedStats.dailyStats) {
+        stats.dailyStats = new Map(Object.entries(savedStats.dailyStats));
+      }
+      
+      console.log('📊 Statistiques chargées depuis le fichier');
+    }
+  } catch (error) {
+    console.error('Erreur lors du chargement des statistiques:', error);
+  }
+}
+
+// Sauvegarder les statistiques dans un fichier
+function saveStats() {
+  try {
+    const dataToSave = {
+      totalDownloads: stats.totalDownloads,
+      todayDownloads: stats.todayDownloads,
+      lastReset: stats.lastReset,
+      visitors: Object.fromEntries(stats.visitors),
+      dailyStats: Object.fromEntries(stats.dailyStats),
+      lastUpdated: new Date().toISOString()
+    };
+    
+    fs.writeFileSync(STATS_FILE, JSON.stringify(dataToSave, null, 2));
+  } catch (error) {
+    console.error('Erreur lors de la sauvegarde des statistiques:', error);
+  }
+}
+
+// Charger les stats au démarrage
+loadStats();
+
+// Mettre à jour les statistiques quotidiennes
+function updateDailyStats() {
+  const today = new Date().toDateString();
+  if (!stats.dailyStats.has(today)) {
+    stats.dailyStats.set(today, { downloads: 0, visitors: new Set() });
+  }
+  
+  return stats.dailyStats.get(today);
+}
 
 function updateStats(ip) {
   const today = new Date().toDateString();
+  
+  // Réinitialiser les stats du jour si nécessaire
   if (stats.lastReset !== today) {
     stats.todayDownloads = 0;
     stats.lastReset = today;
   }
   
+  // Mettre à jour les stats du visiteur
   if (!stats.visitors.has(ip)) {
-    stats.visitors.set(ip, { count: 0, lastVisit: new Date() });
+    stats.visitors.set(ip, { count: 0, lastVisit: new Date(), firstVisit: new Date() });
   }
   const visitor = stats.visitors.get(ip);
   visitor.count++;
   visitor.lastVisit = new Date();
   
+  // Mettre à jour les stats globales
   stats.totalDownloads++;
   stats.todayDownloads++;
+  
+  // Mettre à jour les stats quotidiennes
+  const daily = updateDailyStats();
+  daily.downloads++;
+  daily.visitors.add(ip);
+  
+  // Sauvegarder les stats
+  saveStats();
 }
 
 function getActiveUsers() {
@@ -135,6 +196,39 @@ function getActiveUsers() {
   return Array.from(stats.visitors.values()).filter(v => 
     (now - v.lastVisit) < 300000
   ).length;
+}
+
+// Obtenir les données pour le graphique (7 derniers jours)
+function getChartData() {
+  const labels = [];
+  const downloadsData = [];
+  const visitorsData = [];
+  
+  const today = new Date();
+  
+  for (let i = 6; i >= 0; i--) {
+    const date = new Date();
+    date.setDate(today.getDate() - i);
+    const dateString = date.toDateString();
+    
+    labels.push(getDayName(date.getDay()));
+    
+    if (stats.dailyStats.has(dateString)) {
+      const dayStats = stats.dailyStats.get(dateString);
+      downloadsData.push(dayStats.downloads);
+      visitorsData.push(dayStats.visitors.size);
+    } else {
+      downloadsData.push(0);
+      visitorsData.push(0);
+    }
+  }
+  
+  return { labels, downloads: downloadsData, visitors: visitorsData };
+}
+
+function getDayName(dayIndex) {
+  const days = ['Dim', 'Lun', 'Mar', 'Mer', 'Jeu', 'Ven', 'Sam'];
+  return days[dayIndex];
 }
 
 // ======================================
@@ -274,6 +368,8 @@ app.post('/api/download', async (req, res) => {
 app.get('/api/stats', (req, res) => {
   try {
     const activeUsers = getActiveUsers();
+    const chartData = getChartData();
+    
     res.json({
       success: true,
       stats: {
@@ -283,15 +379,14 @@ app.get('/api/stats', (req, res) => {
         todayVisitors: Array.from(stats.visitors.values()).filter(v => {
           return new Date(v.lastVisit).toDateString() === new Date().toDateString();
         }).length,
-        activeUsers: activeUsers
+        activeUsers: activeUsers,
+        serverUptime: process.uptime(),
+        memoryUsage: process.memoryUsage()
       },
-      chartData: {
-        labels: ['Lun', 'Mar', 'Mer', 'Jeu', 'Ven', 'Sam', 'Dim'],
-        downloads: [120, 150, 180, 90, 200, 160, 210],
-        visitors: [80, 100, 120, 70, 150, 110, 180]
-      }
+      chartData: chartData
     });
   } catch (error) {
+    console.error('Erreur dans /api/stats:', error);
     res.status(500).json({ 
       success: false, 
       message: 'Erreur des statistiques'
@@ -317,9 +412,24 @@ app.use((err, req, res, next) => {
 app.listen(PORT, () => {
   console.log(`🚀 Serveur démarré sur http://localhost:${PORT}`);
   console.log(`📁 Dossier de téléchargement: ${DOWNLOAD_FOLDER}`);
-  console.log('✅ Toutes les dépendances sont disponibles');
+  console.log('✅ Dépendances vérifiées:');
+  REQUIRED_MODULES.forEach(m => {
+    try {
+      console.log(`   - ${m}: ✔️`);
+    } catch (e) {
+      console.log(`   - ${m}: ❌`);
+    }
+  });
   console.log('\n📋 Points à vérifier:');
   console.log('   1. yt-dlp doit être installé sur le système');
-  console.log('   2. Les dossiers public/ et downloads/ existent');
-  console.log('   3. Le serveur a les permissions d\'écriture');
+  console.log('   2. Les dossiers public/ et downloads/ doivent exister');
+  console.log('   3. Le serveur doit avoir les permissions d\'écriture');
+  console.log(`📊 Statistiques initialisées: ${stats.totalDownloads} téléchargements totaux`);
+});
+
+// Sauvegarder les stats avant de quitter
+process.on('SIGINT', () => {
+  console.log('\n💾 Sauvegarde des statistiques...');
+  saveStats();
+  process.exit(0);
 });
