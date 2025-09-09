@@ -2,7 +2,7 @@
 // Vérification et installation des dépendances critiques
 // ======================================
 const REQUIRED_MODULES = [
-  'express', 'path', 'fs', 'yt-dlp-exec', 'sanitize-filename', 
+  'express', 'path', 'fs', 'sanitize-filename', 
   'express-rate-limit', 'cors', 'uuid'
 ];
 
@@ -28,7 +28,9 @@ for (const module of REQUIRED_MODULES) {
 const express = require('express');
 const path = require('path');
 const fs = require('fs');
-const ytdlp = require('yt-dlp-exec');
+const { exec } = require('child_process');
+const util = require('util');
+const execPromise = util.promisify(exec);
 const sanitize = require('sanitize-filename');
 const rateLimit = require('express-rate-limit');
 const cors = require('cors');
@@ -43,6 +45,24 @@ const PUBLIC_FOLDER = path.join(__dirname, 'public');
 const DOWNLOAD_FOLDER = path.join(__dirname, 'downloads');
 const INDEX_HTML = path.join(PUBLIC_FOLDER, 'index.html');
 const FILE_LIFETIME = 60000; // 1 minute (réduit pour les tests)
+
+// ======================================
+// Vérification de yt-dlp
+// ======================================
+async function checkYtDlp() {
+  try {
+    console.log('🔍 Vérification de yt-dlp...');
+    const { stdout, stderr } = await execPromise('yt-dlp --version');
+    console.log(`✅ yt-dlp version: ${stdout.trim()}`);
+    return true;
+  } catch (error) {
+    console.error('❌ yt-dlp non installé ou erreur:');
+    console.error('💡 Installation:');
+    console.error('   Sur Linux/macOS: curl -L https://github.com/yt-dlp/yt-dlp/releases/latest/download/yt-dlp -o /usr/local/bin/yt-dlp && chmod a+rx /usr/local/bin/yt-dlp');
+    console.error('   Sur Windows: Téléchargez depuis https://github.com/yt-dlp/yt-dlp/releases');
+    return false;
+  }
+}
 
 // ======================================
 // Middlewares
@@ -272,6 +292,65 @@ function validateUrl(url) {
 }
 
 // ======================================
+// Fonction de téléchargement avec yt-dlp natif
+// ======================================
+async function downloadWithYtDlp(url, filepath, platform) {
+  // Configuration optimisée pour chaque plateforme
+  const baseOptions = [
+    '-o', filepath,
+    '--no-check-certificates',
+    '--force-overwrites',
+    '--rm-cache-dir',
+    '--format', 'best[ext=mp4]',
+    '--merge-output-format', 'mp4',
+    '--no-playlist',
+    '--no-warnings',
+    '--quiet'
+  ];
+
+  // Options spécifiques aux plateformes
+  const platformOptions = {
+    instagram: [
+      '--add-header', 'User-Agent: Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36',
+      '--add-header', 'Accept: text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8',
+      '--add-header', 'Accept-Language: fr-FR,fr;q=0.9,en-US;q=0.8,en;q=0.7',
+      '--add-header', 'Referer: https://www.instagram.com/',
+      '--sleep-interval', '2',
+      '--max-sleep-interval', '5'
+    ],
+    facebook: [
+      '--add-header', 'User-Agent: Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
+      '--add-header', 'Referer: https://www.facebook.com/'
+    ],
+    tiktok: [
+      '--add-header', 'User-Agent: Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
+      '--add-header', 'Referer: https://www.tiktok.com/'
+    ],
+    youtube: [
+      '--format', 'bestvideo[ext=mp4]+bestaudio[ext=m4a]/best[ext=mp4]/best'
+    ]
+  };
+
+  const options = [...baseOptions, ...(platformOptions[platform] || [])];
+  const command = `yt-dlp ${options.map(opt => `"${opt}"`).join(' ')} "${url}"`;
+
+  console.log(`Executing: ${command}`);
+  
+  try {
+    const { stdout, stderr } = await execPromise(command, { timeout: 120000 });
+    
+    if (stderr && stderr.includes('ERROR')) {
+      throw new Error(stderr);
+    }
+    
+    return true;
+  } catch (error) {
+    console.error('Erreur yt-dlp:', error.message);
+    throw error;
+  }
+}
+
+// ======================================
 // Endpoints
 // ======================================
 app.post('/api/download', async (req, res) => {
@@ -304,17 +383,8 @@ app.post('/api/download', async (req, res) => {
 
     console.log(`[${requestId}] Début du téléchargement depuis: ${platform}`);
 
-    // Configuration simplifiée pour yt-dlp
-    const options = [
-      '-o', filepath,
-      '--no-check-certificates',
-      '--force-overwrites',
-      '--rm-cache-dir',
-      '--format', 'best[ext=mp4]',
-      '--merge-output-format', 'mp4'
-    ];
-
-    await ytdlp(url, options);
+    // Utiliser yt-dlp natif
+    await downloadWithYtDlp(url, filepath, platform);
 
     // Vérification que le fichier existe
     if (!fs.existsSync(filepath)) {
@@ -354,6 +424,15 @@ app.post('/api/download', async (req, res) => {
     } else if (error.message.includes('429') || error.message.includes('rate limit')) {
       errorMessage = 'Limite de taux dépassée, veuillez réessayer plus tard';
       errorType = 'RATE_LIMITED';
+    } else if (error.message.includes('Sign in to confirm')) {
+      errorMessage = 'Instagram requiert une connexion - Essayez une autre vidéo';
+      errorType = 'INSTAGRAM_LOGIN_REQUIRED';
+    } else if (error.message.includes('URL could not be processed')) {
+      errorMessage = 'Lien non valide ou vidéo supprimée';
+      errorType = 'INVALID_URL';
+    } else if (error.message.includes('timed out')) {
+      errorMessage = 'Temps de réponse dépassé - Réessayez';
+      errorType = 'TIMEOUT';
     }
 
     res.status(500).json({
@@ -409,23 +488,33 @@ app.use((err, req, res, next) => {
 // ======================================
 // Démarrage du serveur
 // ======================================
-app.listen(PORT, () => {
-  console.log(`🚀 Serveur démarré sur http://localhost:${PORT}`);
-  console.log(`📁 Dossier de téléchargement: ${DOWNLOAD_FOLDER}`);
-  console.log('✅ Dépendances vérifiées:');
-  REQUIRED_MODULES.forEach(m => {
-    try {
-      console.log(`   - ${m}: ✔️`);
-    } catch (e) {
-      console.log(`   - ${m}: ❌`);
-    }
+async function startServer() {
+  // Vérifier yt-dlp
+  const ytDlpAvailable = await checkYtDlp();
+  if (!ytDlpAvailable) {
+    console.log('⚠️  yt-dlp n\'est pas installé, certaines fonctionnalités seront limitées');
+  }
+
+  app.listen(PORT, () => {
+    console.log(`🚀 Serveur démarré sur http://localhost:${PORT}`);
+    console.log(`📁 Dossier de téléchargement: ${DOWNLOAD_FOLDER}`);
+    console.log('✅ Dépendances vérifiées:');
+    REQUIRED_MODULES.forEach(m => {
+      try {
+        console.log(`   - ${m}: ✔️`);
+      } catch (e) {
+        console.log(`   - ${m}: ❌`);
+      }
+    });
+    console.log('\n📋 Points à vérifier:');
+    console.log('   1. yt-dlp doit être installé sur le système');
+    console.log('   2. Les dossiers public/ et downloads/ doivent exister');
+    console.log('   3. Le serveur doit avoir les permissions d\'écriture');
+    console.log(`📊 Statistiques initialisées: ${stats.totalDownloads} téléchargements totaux`);
   });
-  console.log('\n📋 Points à vérifier:');
-  console.log('   1. yt-dlp doit être installé sur le système');
-  console.log('   2. Les dossiers public/ et downloads/ doivent exister');
-  console.log('   3. Le serveur doit avoir les permissions d\'écriture');
-  console.log(`📊 Statistiques initialisées: ${stats.totalDownloads} téléchargements totaux`);
-});
+}
+
+startServer();
 
 // Sauvegarder les stats avant de quitter
 process.on('SIGINT', () => {
