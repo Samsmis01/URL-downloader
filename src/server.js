@@ -72,6 +72,16 @@ app.use('/downloads', express.static(DOWNLOAD_FOLDER));
 app.use(express.static(PUBLIC_FOLDER));
 app.use(express.json());
 
+// Middleware pour capturer l'IP réelle du visiteur
+app.use((req, res, next) => {
+  const clientIp = req.headers['x-forwarded-for'] || 
+                   req.connection.remoteAddress || 
+                   req.socket.remoteAddress ||
+                   (req.connection.socket ? req.connection.socket.remoteAddress : null);
+  req.clientIp = clientIp ? clientIp.split(',')[0].trim() : 'unknown';
+  next();
+});
+
 const limiter = rateLimit({
   windowMs: 15 * 60 * 1000,
   max: 50,
@@ -118,7 +128,8 @@ const stats = {
   todayDownloads: 0,
   lastReset: new Date().toDateString(),
   visitors: new Map(),
-  dailyStats: new Map() // Pour suivre les stats par jour
+  dailyStats: new Map(), // Pour suivre les stats par jour
+  uniqueVisitors: new Set() // Pour compter les visiteurs uniques par IP
 };
 
 // Charger les statistiques depuis un fichier si existant
@@ -143,6 +154,11 @@ function loadStats() {
         stats.dailyStats = new Map(Object.entries(savedStats.dailyStats));
       }
       
+      // Charger les visiteurs uniques
+      if (savedStats.uniqueVisitors) {
+        stats.uniqueVisitors = new Set(savedStats.uniqueVisitors);
+      }
+      
       console.log('📊 Statistiques chargées depuis le fichier');
     }
   } catch (error) {
@@ -159,6 +175,7 @@ function saveStats() {
       lastReset: stats.lastReset,
       visitors: Object.fromEntries(stats.visitors),
       dailyStats: Object.fromEntries(stats.dailyStats),
+      uniqueVisitors: Array.from(stats.uniqueVisitors),
       lastUpdated: new Date().toISOString()
     };
     
@@ -188,6 +205,11 @@ function updateStats(ip) {
   if (stats.lastReset !== today) {
     stats.todayDownloads = 0;
     stats.lastReset = today;
+  }
+  
+  // Enregistrer le visiteur unique
+  if (!stats.uniqueVisitors.has(ip)) {
+    stats.uniqueVisitors.add(ip);
   }
   
   // Mettre à jour les stats du visiteur
@@ -356,9 +378,9 @@ async function downloadWithYtDlp(url, filepath, platform) {
 app.post('/api/download', async (req, res) => {
   const { url } = req.body;
   const requestId = uuidv4();
-  const clientIp = req.ip || req.connection.remoteAddress;
+  const clientIp = req.clientIp;
 
-  console.log(`[${requestId}] Requête reçue pour: ${url}`);
+  console.log(`[${requestId}] Requête reçue de l'IP: ${clientIp} pour: ${url}`);
 
   if (!url) {
     return res.status(400).json({ 
@@ -454,7 +476,7 @@ app.get('/api/stats', (req, res) => {
       stats: {
         totalDownloads: stats.totalDownloads,
         todayDownloads: stats.todayDownloads,
-        totalVisitors: stats.visitors.size,
+        totalVisitors: stats.uniqueVisitors.size, // Utilisation des visiteurs uniques
         todayVisitors: Array.from(stats.visitors.values()).filter(v => {
           return new Date(v.lastVisit).toDateString() === new Date().toDateString();
         }).length,
@@ -469,6 +491,26 @@ app.get('/api/stats', (req, res) => {
     res.status(500).json({ 
       success: false, 
       message: 'Erreur des statistiques'
+    });
+  }
+});
+
+// Nouvel endpoint pour obtenir le nombre de visiteurs
+app.get('/api/visitors', (req, res) => {
+  try {
+    res.json({
+      success: true,
+      totalVisitors: stats.uniqueVisitors.size,
+      todayVisitors: Array.from(stats.visitors.values()).filter(v => {
+        return new Date(v.lastVisit).toDateString() === new Date().toDateString();
+      }).length,
+      activeVisitors: getActiveUsers()
+    });
+  } catch (error) {
+    console.error('Erreur dans /api/visitors:', error);
+    res.status(500).json({ 
+      success: false, 
+      message: 'Erreur lors de la récupération des données visiteurs'
     });
   }
 });
@@ -511,6 +553,7 @@ async function startServer() {
     console.log('   2. Les dossiers public/ et downloads/ doivent exister');
     console.log('   3. Le serveur doit avoir les permissions d\'écriture');
     console.log(`📊 Statistiques initialisées: ${stats.totalDownloads} téléchargements totaux`);
+    console.log(`👥 Visiteurs uniques: ${stats.uniqueVisitors.size}`);
   });
 }
 
