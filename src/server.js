@@ -1,26 +1,22 @@
 // ======================================
-// Vérification et installation des dépendances critiques
+// Vérification des dépendances critiques
 // ======================================
+console.log('🔍 Vérification des dépendances...');
 const REQUIRED_MODULES = [
   'express', 'path', 'fs', 'yt-dlp-exec', 'sanitize-filename', 
   'express-rate-limit', 'cors', 'uuid'
 ];
 
-for (const module of REQUIRED_MODULES) {
+REQUIRED_MODULES.forEach(module => {
   try {
     require.resolve(module);
+    console.log(`✅ ${module}`);
   } catch (e) {
-    console.error(`[INIT] Module manquant détecté: ${module}`);
-    const { execSync } = require('child_process');
-    try {
-      execSync(`npm install ${module} --save`, { stdio: 'inherit' });
-      console.log(`[INIT] ${module} installé avec succès`);
-    } catch (installError) {
-      console.error(`[INIT] Échec de l'installation de ${module}:`, installError);
-      process.exit(1);
-    }
+    console.error(`❌ ${module} - MANQUANT`);
+    console.error(`Veuillez exécuter: npm install ${module}`);
+    process.exit(1);
   }
-}
+});
 
 // ======================================
 // Import des dépendances
@@ -45,6 +41,30 @@ const INDEX_HTML = path.join(PUBLIC_FOLDER, 'index.html');
 const FILE_LIFETIME = 60000; // 1 minute (réduit pour les tests)
 
 // ======================================
+// Vérification des permissions
+// ======================================
+try {
+  if (!fs.existsSync(DOWNLOAD_FOLDER)) {
+    fs.mkdirSync(DOWNLOAD_FOLDER, { recursive: true });
+    console.log('✅ Dossier downloads créé');
+  }
+  
+  if (!fs.existsSync(PUBLIC_FOLDER)) {
+    fs.mkdirSync(PUBLIC_FOLDER, { recursive: true });
+    console.log('✅ Dossier public créé');
+  }
+  
+  // Test des permissions d'écriture
+  const testFile = path.join(DOWNLOAD_FOLDER, 'test_permission.txt');
+  fs.writeFileSync(testFile, 'test');
+  fs.unlinkSync(testFile);
+  console.log('✅ Permissions d\'écriture OK');
+} catch (error) {
+  console.error('❌ Erreur de permissions:', error.message);
+  process.exit(1);
+}
+
+// ======================================
 // Middlewares
 // ======================================
 app.use(cors());
@@ -62,14 +82,6 @@ app.use('/api/download', limiter);
 // ======================================
 // Gestion des fichiers
 // ======================================
-if (!fs.existsSync(DOWNLOAD_FOLDER)) {
-  fs.mkdirSync(DOWNLOAD_FOLDER, { recursive: true });
-}
-
-if (!fs.existsSync(PUBLIC_FOLDER)) {
-  fs.mkdirSync(PUBLIC_FOLDER, { recursive: true });
-}
-
 function cleanOldFiles() {
   fs.readdir(DOWNLOAD_FOLDER, (err, files) => {
     if (err) return console.error('Error cleaning files:', err);
@@ -305,16 +317,9 @@ app.use((err, req, res, next) => {
 app.listen(PORT, () => {
   console.log(`🚀 Serveur démarré sur http://localhost:${PORT}`);
   console.log(`📁 Dossier de téléchargement: ${DOWNLOAD_FOLDER}`);
-  console.log('✅ Dépendances vérifiées:');
-  REQUIRED_MODULES.forEach(m => {
-    try {
-      console.log(`   - ${m}: ✔️`);
-    } catch (e) {
-      console.log(`   - ${m}: ❌`);
-    }
-  });
+  console.log('✅ Toutes les dépendances sont disponibles');
   console.log('\n📋 Points à vérifier:');
   console.log('   1. yt-dlp doit être installé sur le système');
-  console.log('   2. Les dossiers public/ et downloads/ doivent exister');
-  console.log('   3. Le serveur doit avoir les permissions d\'écriture');
+  console.log('   2. Les dossiers public/ et downloads/ existent');
+  console.log('   3. Le serveur a les permissions d\'écriture');
 });
